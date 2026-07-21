@@ -1807,6 +1807,31 @@ async def update_service_order(os_number: str, updates: ServiceOrderUpdate, requ
     # Build update_data - include non-None values
     update_data = {k: v for k, v in updates.model_dump().items() if v is not None}
 
+    # PHOTO PRESERVATION GUARD — never overwrite a stored photo with an empty
+    # string unless the client explicitly asks. Autosave paths can send
+    # `photo_i = ''` when their hydration hasn't finished (race), which used
+    # to wipe photos already saved from another device. To EXPLICITLY clear
+    # a photo, send `clear_photos: [1,3,...]` (indices 1..8) alongside the
+    # PUT body — see LaudoModal.handleImageChange for the intended UX.
+    clear_indices = set()
+    raw_clear = raw_body.get("clear_photos")
+    if isinstance(raw_clear, list):
+        for idx in raw_clear:
+            try: clear_indices.add(int(idx))
+            except (TypeError, ValueError): pass
+    for i in range(1, 9):
+        key = f"photo_{i}"
+        if key in update_data and update_data[key] == "" and i not in clear_indices:
+            existing = order.get(key)
+            if existing:
+                # Silently drop the destructive empty-write. Log for visibility.
+                logger.info(
+                    f"PHOTO GUARD: refusing to clear {key} on OS {os_number} "
+                    f"(client sent '' but a photo is stored). Send "
+                    f"clear_photos=[{i}] to force."
+                )
+                update_data.pop(key, None)
+
     # Check if any nullable field was explicitly sent as null/false in the raw request
     for field in nullable_fields:
         if field in raw_body and (raw_body[field] is None or raw_body[field] is False):

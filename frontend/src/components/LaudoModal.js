@@ -162,6 +162,12 @@ const LaudoModal = ({ open, onClose, order, getAuthHeader, onUpdated }) => {
   const autoSaveTimerRef = useRef(null);
   const lastSnapshotRef = useRef('');
   const draftLoadedRef = useRef(false);
+  // Autosave gating flags — replace the previous fixed 300ms timeout with
+  // REAL signals so autosave never fires before both loads have completed.
+  // If either load fails, we still enable autosave (`try/catch/finally`
+  // below sets both to true) so the user can start editing offline.
+  const [draftFetched, setDraftFetched] = useState(false);
+  const [photosFetched, setPhotosFetched] = useState(false);
   
   const [formData, setFormData] = useState({
     os_number: '', customer_name: '', model: '', serial_number: '',
@@ -179,6 +185,11 @@ const LaudoModal = ({ open, onClose, order, getAuthHeader, onUpdated }) => {
 
   useEffect(() => {
     if (order && open) {
+      // Reset gating flags on every open so autosave stays locked until both
+      // network calls (draft + fresh OS with photos) complete.
+      setDraftFetched(false);
+      setPhotosFetched(false);
+
       // Load draft
       axios.get(`${API}/laudo/draft/${order.os_number}`, getAuthHeader())
         .then(res => {
@@ -260,8 +271,31 @@ const LaudoModal = ({ open, onClose, order, getAuthHeader, onUpdated }) => {
           // Load photos from OS
           const orderPhotos = [1,2,3,4,5,6,7,8].map(i => order[`photo_${i}`] || null);
           if (orderPhotos.some(p => p)) setImages(orderPhotos);
-        });
-      
+        })
+        .finally(() => { setDraftFetched(true); });
+
+      // Force-fetch the OS WITH photos so the modal's `images` state is
+      // hydrated from the authoritative Supabase copy (order prop may come
+      // from the list without ?include_photos=1). Autosave stays locked
+      // until this completes — see gating effect below.
+      axios.get(`${API}/service-orders/${order.os_number}?include_photos=1`, getAuthHeader())
+        .then(res => {
+          const fresh = res.data || {};
+          setImages(prev => {
+            const next = [...prev];
+            let changed = false;
+            for (let i = 0; i < 8; i++) {
+              if (!next[i] && fresh[`photo_${i + 1}`]) {
+                next[i] = fresh[`photo_${i + 1}`];
+                changed = true;
+              }
+            }
+            return changed ? next : prev;
+          });
+        })
+        .catch(() => { /* offline / rate-limit / 5xx — user can still work locally */ })
+        .finally(() => { setPhotosFetched(true); });
+
       // Load history
       axios.get(`${API}/laudo/history/${order.os_number}`, getAuthHeader())
         .then(res => setLaudoHistory(res.data || []))
@@ -269,8 +303,6 @@ const LaudoModal = ({ open, onClose, order, getAuthHeader, onUpdated }) => {
       
       setCurrentStep(1);
       setLaudoType(null);
-      // Mark draft as loaded after a tick so autosave doesn't fire on initial setState
-      setTimeout(() => { draftLoadedRef.current = true; lastSnapshotRef.current = ''; }, 300);
     }
     if (!open) {
       // Flush any pending save when the modal closes (e.g. parent toggled
@@ -290,6 +322,9 @@ const LaudoModal = ({ open, onClose, order, getAuthHeader, onUpdated }) => {
         }
       }
       draftLoadedRef.current = false;
+      // Reset gating so the next open re-blocks autosave until both loads finish.
+      setDraftFetched(false);
+      setPhotosFetched(false);
     }
   }, [order?.os_number, open, getAuthHeader]); // eslint-disable-line react-hooks/exhaustive-deps
   // ↑ IMPORTANT: depend on order?.os_number, NOT the whole order object.
@@ -359,6 +394,18 @@ const LaudoModal = ({ open, onClose, order, getAuthHeader, onUpdated }) => {
   useEffect(() => { finalDataRef.current = finalData; }, [finalData]);
   useEffect(() => { imagesRef.current = images; }, [images]);
 
+  // Autosave GATE — arm the debounced autosave ONLY when BOTH network loads
+  // (draft + fresh OS with photos) have completed. Replaces the previous
+  // fixed 300ms timeout that raced with slow mobile networks and could fire
+  // autosave before hydration, wiping photos with empty state. If either
+  // fetch fails, `.finally()` still flips the flag so the user can work.
+  useEffect(() => {
+    if (draftFetched && photosFetched) {
+      draftLoadedRef.current = true;
+      lastSnapshotRef.current = '';
+    }
+  }, [draftFetched, photosFetched]);
+
   // The actual save routine — single source of truth. Called by the debounced
   // autosave AND by flush-on-close. Both laudo/save and the OS PUT run
   // INDEPENDENTLY so one failing doesn't cancel the other.
@@ -396,10 +443,18 @@ const LaudoModal = ({ open, onClose, order, getAuthHeader, onUpdated }) => {
         const s = (v ?? '').toString();
         if (s.trim() !== '') osUpdate[k] = s;
       };
-      // Photos: always include all 8 slots (null slots become '' so the user
-      // can intentionally clear a photo from LaudoModal). Photos are owned by
-      // LaudoModal in this flow, so destructive semantics are desired.
-      for (let i = 0; i < 8; i++) osUpdate[`photo_${i + 1}`] = imgs[i] || '';
+      // Photos: ADDITIVE — only send photo_i if we actually have image data
+      // for that slot. This prevents accidental wiping of photos already in
+      // the DB when the modal opens with empty slots (e.g. race condition
+      // during hydration on slow mobile networks). Explicit clearing is now
+      // owned by handleImageChange(index, null) + a dedicated action; the
+      // autosave path must never destroy existing photos.
+      for (let i = 0; i < 8; i++) {
+        const raw = imgs[i];
+        if (typeof raw === 'string' && raw.trim() !== '') {
+          osUpdate[`photo_${i + 1}`] = raw;
+        }
+      }
       // Text fields: only sync when actually filled in LaudoModal.
       addIfFilled('model', fd.model);
       addIfFilled('serial_number', fd.serial_number);
@@ -510,10 +565,19 @@ const LaudoModal = ({ open, onClose, order, getAuthHeader, onUpdated }) => {
 
       // Persist the 8 photos directly on the OS so other flows (routes —
       // "Concluir Atendimento") can verify completion regardless of draft.
+      // ADDITIVE: only send slots with actual image data (matches runLaudoSave
+      // semantics). Empty slots are NOT sent — server-side guard also refuses
+      // to clear existing photos without explicit `clear_photos` flag.
       try {
         const photoUpdate = {};
-        images.forEach((img, i) => { photoUpdate[`photo_${i + 1}`] = img || ''; });
-        await axios.put(`${API}/service-orders/${formData.os_number}`, photoUpdate, getAuthHeader());
+        images.forEach((img, i) => {
+          if (typeof img === 'string' && img.trim() !== '') {
+            photoUpdate[`photo_${i + 1}`] = img;
+          }
+        });
+        if (Object.keys(photoUpdate).length > 0) {
+          await axios.put(`${API}/service-orders/${formData.os_number}`, photoUpdate, getAuthHeader());
+        }
       } catch (_) { /* non-fatal — draft still saved */ }
 
       toast.success('Rascunho salvo!');
