@@ -70,6 +70,10 @@ class TelecontrolScraper:
         self.login_pass = password
         self.source_label = source_label
         self._sync_lock = asyncio.Lock()
+        # Captured from the login page's #msgErro when auth fails — surfaced
+        # in sync_orders errors so the health badge shows the real reason
+        # (e.g. "Login ou senha inválidos") instead of a generic message.
+        self.last_login_error: Optional[str] = None
         
     async def start_browser(self):
         """Initialize browser instance"""
@@ -192,34 +196,110 @@ class TelecontrolScraper:
                 logger.error("Could not find password field")
                 return False
             
-            # Try to click submit button
+            # Try to click submit button. Telecontrol's form uses
+            # `action="javascript: login();"` — so the actual submit is the
+            # JS `login()` function. We try to invoke it directly first;
+            # falling back to a real click / Enter press if that doesn't
+            # work (which handles older / different login pages).
             submitted = False
-            for selector in submit_selectors:
-                try:
-                    if await page.locator(selector).count() > 0:
-                        await page.click(selector, timeout=5000)
-                        submitted = True
-                        logger.info(f"Clicked submit using selector: {selector}")
-                        break
-                except Exception:
-                    continue
-            
+            try:
+                await page.evaluate('typeof login === "function" && login()')
+                submitted = True
+                logger.info("Invoked Telecontrol login() JS function")
+            except Exception as e:
+                logger.debug(f"Could not invoke login() JS: {e}")
+            if not submitted:
+                for selector in submit_selectors:
+                    try:
+                        if await page.locator(selector).count() > 0:
+                            await page.click(selector, timeout=5000)
+                            submitted = True
+                            logger.info(f"Clicked submit using selector: {selector}")
+                            break
+                    except Exception:
+                        continue
             if not submitted:
                 await page.keyboard.press('Enter')
                 logger.info("Pressed Enter to submit")
-            
-            await page.wait_for_timeout(5000)
-            await page.wait_for_load_state('networkidle', timeout=30000)
-            
-            # Check if login was successful
+
+            # Give the JS `login()` AJAX call a bit of time to populate the
+            # #msgErro element OR to redirect. We first wait a short beat
+            # for the AJAX submit, THEN wait for either a URL change (means
+            # login worked) or an error message to appear (means it didn't).
+            await page.wait_for_timeout(3000)
+            try:
+                await page.wait_for_function(
+                    """() => {
+                        const url = window.location.href;
+                        const msg = document.getElementById('msgErro');
+                        return !url.includes('login_posvenda_new')
+                            || (msg && msg.innerText && msg.innerText.trim().length > 0);
+                    }""",
+                    timeout=8000,
+                )
+            except Exception:
+                # No signal either way — fall through to the URL check below
+                pass
+            try:
+                await page.wait_for_load_state('networkidle', timeout=15000)
+            except Exception:
+                pass
+
+            # Check if login was successful.
+            #
+            # OLD (buggy): declared success as long as "erro" wasn't in the
+            # URL. That let redirects back to `login_posvenda_new.php` count
+            # as "logged in", so fetch_orders_list would then try to fill
+            # date fields on the login page and blow up cryptically. Root
+            # cause of the 28/07 silent-truncation incident together with
+            # the pagination bug.
+            #
+            # NEW: require the URL to look like a logged-in page AND make
+            # sure it doesn't still say "login" somewhere. Also grab the
+            # exact `#msgErro` text from the page when we fail — this ends
+            # up surfaced in the health badge so the operator sees
+            # "Login ou senha inválidos" instead of a generic error.
             current_url = page.url
-            if "erro" not in current_url.lower():
+            url_l = current_url.lower()
+            logged_in_hint = (
+                "consulta_lite_new.php" in url_l
+                or "menu_inicial" in url_l
+                or "assist/main" in url_l
+            )
+            still_on_login = "login" in url_l or url_l.endswith("index.php")
+            if logged_in_hint and not still_on_login:
                 self.logged_in = True
                 logger.info(f"Login successful, current URL: {current_url}")
                 return True
-            else:
-                logger.error(f"Login failed, current URL: {current_url}")
-                return False
+
+            # Failed. Capture the exact error message the site is showing.
+            site_msg = ""
+            try:
+                site_msg = await page.evaluate(
+                    'document.getElementById("msgErro")?.innerText || ""'
+                )
+                site_msg = (site_msg or "").strip()
+            except Exception:
+                pass
+            try:
+                title = await page.title()
+            except Exception:
+                title = "?"
+            # Telecontrol's server-side response after a failed submit
+            # redirects to /assist/login.php? — that's a strong signal the
+            # credentials were rejected (as opposed to network problems,
+            # which would time out before this point).
+            if not site_msg and current_url.rstrip("/?").endswith("login.php"):
+                site_msg = "Login ou senha inválidos (Telecontrol rejeitou as credenciais)"
+            reason = site_msg or f"login page reached (title={title!r}) — session not established"
+            logger.error(
+                f"Login failed — url={current_url} reason={reason!r} "
+                f"user={self.login_user!r}"
+            )
+            # Store on instance so sync_orders can surface a clean message
+            # instead of the whole stacktrace-y string.
+            self.last_login_error = reason
+            return False
                 
         except Exception as e:
             logger.error(f"Login error: {e}")
@@ -340,46 +420,98 @@ class TelecontrolScraper:
                 logger.info("No results found or table not loaded")
                 return orders
 
-            # Paginate through all results
+            # Paginate through all results.
+            #
+            # HARDENED PAGINATION (28/07/2026 incident):
+            # - The previous version caught any exception on the "next page"
+            #   click and treated it as "end of results", silently truncating
+            #   the sync. Any network hiccup would produce a partial sync
+            #   that persisted success=True in the DB. Root cause of the
+            #   incident where 4 Hisense OSs went missing.
+            # - Now: transient errors (timeouts, missing selectors) are
+            #   retried up to 3x with backoff; only permanent failure raises
+            #   so the caller can mark the sync as failed instead of
+            #   pretending it finished.
             page_num = 1
             while True:
                 logger.info(f"Scraping page {page_num}...")
-                
+
                 page_orders = await self._extract_orders_from_page(page)
                 if page_orders:
                     orders.extend(page_orders)
                     logger.info(f"Page {page_num}: extracted {len(page_orders)} orders (total: {len(orders)})")
-                
-                # Check for next page button
-                try:
-                    next_btn = page.locator('#tabelas_next:not(.disabled), .paginate_button.next:not(.disabled)')
-                    if await next_btn.count() > 0 and await next_btn.is_enabled():
-                        await next_btn.click()
-                        await page.wait_for_timeout(3000)
-                        await page.wait_for_load_state('networkidle', timeout=15000)
-                        page_num += 1
-                    else:
-                        logger.info("No more pages")
-                        break
-                except Exception:
-                    logger.info("Pagination ended")
+
+                # Attempt to advance to next page. Retry up to 3x with
+                # exponential backoff on transient Playwright/network errors
+                # before declaring the pagination truly finished.
+                advanced = False
+                page_ended = False
+                last_error = None
+                for attempt in range(1, 4):  # 3 tries total
+                    try:
+                        next_btn = page.locator(
+                            '#tabelas_next:not(.disabled), .paginate_button.next:not(.disabled)'
+                        )
+                        if await next_btn.count() > 0 and await next_btn.is_enabled():
+                            await next_btn.click()
+                            await page.wait_for_timeout(3000)
+                            # 30s instead of 15s — Telecontrol can be slow
+                            # under load without being broken.
+                            await page.wait_for_load_state('networkidle', timeout=30000)
+                            # Confirm the new page has rendered before we
+                            # extract from it — otherwise _extract_orders_from_page
+                            # could pull the previous page again.
+                            await page.wait_for_selector('#tabelas tbody tr', timeout=30000)
+                            page_num += 1
+                            advanced = True
+                            break
+                        else:
+                            # Real "no next page" (the button is disabled
+                            # because we're on the last page). This is the
+                            # ONLY legitimate exit — not any exception.
+                            logger.info("No more pages (next button disabled)")
+                            page_ended = True
+                            break
+                    except Exception as e:  # noqa: BLE001 - narrow retry loop
+                        last_error = e
+                        backoff = 2 * attempt  # 2s, 4s, 6s
+                        logger.warning(
+                            f"[{self.source_label}] Pagination attempt {attempt}/3 "
+                            f"on page {page_num}->page {page_num + 1} failed: {e}. "
+                            f"Retrying in {backoff}s..."
+                        )
+                        await page.wait_for_timeout(backoff * 1000)
+
+                if page_ended:
                     break
-                
+                if not advanced:
+                    # All 3 retries exhausted — this is a REAL failure. Do
+                    # NOT silently succeed with partial data — raise so the
+                    # sync gets flagged as failed and someone gets alerted.
+                    raise RuntimeError(
+                        f"Pagination failed on page {page_num} after 3 retries "
+                        f"(collected {len(orders)} orders so far). "
+                        f"Last error: {last_error}"
+                    )
+
                 # Safety limit
                 if page_num > 50:
                     logger.warning("Reached max page limit (50)")
                     break
-            
+
             if orders:
                 for order in orders:
                     order['brand'] = extract_brand_from_description(order.get('product', ''))
-                
+
             logger.info(f"Successfully extracted {len(orders)} orders from Telecontrol ({page_num} pages)")
             return orders
-            
+
         except Exception as e:
+            # Bubble the exception up to sync_orders so it flips success=False
+            # and shows in result["errors"]. The previous "return orders" swallowed
+            # the failure and made partial syncs look successful (the 28/07 bug).
             logger.error(f"Error fetching orders list: {e}")
-            return orders
+            raise
 
     async def _extract_orders_from_page(self, page: Page) -> List[Dict]:
         """Extract orders from current page of results table"""
@@ -788,14 +920,63 @@ class TelecontrolScraper:
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             )
             
-            # Login
-            if not await self.login(page):
-                result["errors"].append("Login failed")
+            # Login — retry up to 2 times before giving up so transient
+            # errors (slow network, momentary 5xx from Telecontrol) don't
+            # kill an entire sync cycle. Every failure is recorded in
+            # result["errors"] so the caller can see WHY the sync failed.
+            logged_in = False
+            self.last_login_error = None
+            for attempt in range(1, 3):  # 2 attempts
+                try:
+                    if await self.login(page):
+                        logged_in = True
+                        break
+                    # login() populates self.last_login_error with the exact
+                    # site-side message (e.g. "Login ou senha inválidos !!!")
+                    reason = self.last_login_error or "session not established"
+                    result["errors"].append(
+                        f"Login attempt {attempt}/2 failed: {reason}"
+                    )
+                except Exception as e:  # noqa: BLE001
+                    result["errors"].append(
+                        f"Login attempt {attempt}/2 raised: {e}"
+                    )
+                    logger.warning(
+                        f"[{self.source_label}] Login attempt {attempt}/2 failed: {e}"
+                    )
+                if attempt < 2:
+                    await page.wait_for_timeout(3000 * attempt)  # 3s, then 6s
+            if not logged_in:
+                # Sync is broken — DO NOT return success. The badge is
+                # driven by SCRAPER_HEALTH.consecutive_failures, and this
+                # exit path must bubble that up.
                 await page.close()
                 return result
-            
-            # Fetch orders list
-            orders = await self.fetch_orders_list(page, start_date, end_date)
+
+            # Fetch orders list — retry up to 2 times. fetch_orders_list
+            # now raises on real failures (see hardened pagination) so we
+            # get to actually retry instead of silently truncating.
+            orders = []
+            list_ok = False
+            for attempt in range(1, 3):
+                try:
+                    orders = await self.fetch_orders_list(page, start_date, end_date)
+                    list_ok = True
+                    break
+                except Exception as e:  # noqa: BLE001
+                    result["errors"].append(
+                        f"fetch_orders_list attempt {attempt}/2 raised: {e}"
+                    )
+                    logger.warning(
+                        f"[{self.source_label}] fetch_orders_list attempt {attempt}/2 "
+                        f"failed: {e}"
+                    )
+                    if attempt < 2:
+                        await page.wait_for_timeout(5000 * attempt)  # 5s, 10s
+            if not list_ok:
+                # Same reasoning as login: bubble up as failure.
+                await page.close()
+                return result
             
             # Process each order
             for order_summary in orders:
@@ -947,14 +1128,23 @@ class TelecontrolScraper:
                     continue
             
             await page.close()
-            result["success"] = True
-            
+            # Only declare success if we ACTUALLY got past login + list
+            # fetch. Per-order errors are recorded but tolerated — losing a
+            # couple of details to individual quirks is expected. A blanket
+            # login/pagination failure is NOT (that's what left 4 OSs behind
+            # on 28/07).
+            result["success"] = list_ok and logged_in
+            # Convenience flag so callers can distinguish "everything fine"
+            # vs "mostly worked but had errors" without re-parsing.
+            result["degraded"] = bool(result["errors"]) and result["success"]
+
         except Exception as e:
             logger.error(f"[{self.source_label}] Sync error: {e}")
             result["errors"].append(str(e))
+            result["success"] = False
         finally:
             await self.close_browser()
-        
+
         return result
 
 

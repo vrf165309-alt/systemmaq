@@ -291,14 +291,56 @@ async def startup_auto_sync():
     asyncio.create_task(hisense_loop())
     # Load persisted scraper health on boot
     asyncio.create_task(_load_health_from_db())
+    # Watchdog: independently checks whether the scheduler is producing
+    # sync runs on schedule. If NO sync of a given source has happened in
+    # the last 3× SYNC_INTERVAL_MINUTES, we mark it as stalled so the
+    # header badge lights up. Covers the case where the loop itself dies
+    # or is stuck — not just a single failed cycle.
+    asyncio.create_task(_scraper_watchdog())
+
+
+async def _scraper_watchdog():
+    """Background task that flips a scraper to `down` when its last run is
+    stale (older than 3× SYNC_INTERVAL_MINUTES). Runs every minute.
+
+    Only checks HISENSE (HQ is manual-only — no expectation of periodic
+    runs, so a stale HQ isn't a bug).
+    """
+    import asyncio
+    interval_min = int(os.environ.get('SYNC_INTERVAL_MINUTES', 10))
+    stale_threshold_sec = interval_min * 60 * 3
+    # Wait a bit after boot so we don't fire on a fresh container.
+    await asyncio.sleep(60)
+    while True:
+        try:
+            h = SCRAPER_HEALTH.get("hisense")
+            if h and h.get("last_run"):
+                try:
+                    last_run_dt = datetime.fromisoformat(h["last_run"].replace("Z", "+00:00"))
+                    age_sec = (datetime.now(timezone.utc) - last_run_dt).total_seconds()
+                    if age_sec > stale_threshold_sec:
+                        # Only escalate if we're not already down.
+                        if h.get("status") != "down":
+                            h["status"] = "down"
+                            h["last_error"] = (
+                                f"Watchdog: sem sync há {int(age_sec/60)} min "
+                                f"(esperado a cada {interval_min} min). Processo travado?"
+                            )
+                            logger.error(f"[watchdog] {h['last_error']}")
+                            await _persist_health("hisense")
+                except (TypeError, ValueError):
+                    pass
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"watchdog tick error: {e}")
+        await asyncio.sleep(60)
 
 
 # === Scraper Health tracking ===
 # In-memory dict updated by sync runs. Persisted to MongoDB collection `scraper_health`
 # so the badge survives backend restarts.
 SCRAPER_HEALTH = {
-    "hisense": {"status": "unknown", "consecutive_failures": 0, "last_success": None, "last_failure": None, "last_error": None},
-    "hq": {"status": "unknown", "consecutive_failures": 0, "last_success": None, "last_failure": None, "last_error": None},
+    "hisense": {"status": "unknown", "consecutive_failures": 0, "last_success": None, "last_failure": None, "last_error": None, "last_run": None, "last_volume": None, "recent_volumes": []},
+    "hq": {"status": "unknown", "consecutive_failures": 0, "last_success": None, "last_failure": None, "last_error": None, "last_run": None, "last_volume": None, "recent_volumes": []},
 }
 
 # Use MongoDB (not Supabase) to persist scraper health - this collection does not exist in Supabase schema.
@@ -327,18 +369,67 @@ async def _persist_health(source: str):
 
 
 async def _run_sync_with_health(source: str, scraper, start_str: str, end_str: str):
-    """Run scraper sync, update health metrics, and trigger auto-resync on recovery."""
+    """Run scraper sync, update health metrics, and trigger auto-resync on recovery.
+
+    Hardened after the 28/07/2026 silent-truncation incident:
+      * `result["success"] = False` (login failed / pagination broke) is
+        treated as a real failure and increments `consecutive_failures`.
+      * Anomalous volume detection: if this sync collected < 20% of the
+        recent average (last 5 successful syncs), we bump the status to
+        `warning` even though no exception was raised. The badge shows
+        "Scraper instável" so the ops team investigates instead of
+        finding out days later that pages got dropped mid-run.
+    """
     h = SCRAPER_HEALTH[source]
     was_down = h["consecutive_failures"] >= 2
     try:
         result = await scraper.sync_orders(start_str, end_str, db)
+        synced = result.get("orders_synced", 0)
+        updated = result.get("orders_updated", 0)
+        errors_list = result.get("errors", []) or []
+
+        # Explicit-failure path — scraper returned success=False (broken
+        # login or pagination). Route into the except-arm behaviour so the
+        # badge lights up.
+        if not result.get("success", False):
+            raise RuntimeError(
+                f"scraper reported success=False; errors={errors_list[:3]}"
+            )
+
         # Success path
         h["status"] = "ok"
         h["consecutive_failures"] = 0
         h["last_success"] = datetime.now(timezone.utc).isoformat()
         h["last_error"] = None
-        synced = result.get("orders_synced", 0)
-        updated = result.get("orders_updated", 0)
+        h["last_volume"] = synced + updated
+
+        # Anomaly detection: compare with historical mean. Threshold is
+        # kept generous (20% of average) so normal quiet periods don't
+        # trigger — the goal is to catch pagination truncation, not to
+        # nag on slow days.
+        try:
+            history = h.get("recent_volumes") or []
+            history.append(synced + updated)
+            history = history[-10:]  # keep last 10 runs
+            h["recent_volumes"] = history
+            eligible = [v for v in history[:-1] if v > 0]
+            if len(eligible) >= 5:
+                avg = sum(eligible) / len(eligible)
+                if (synced + updated) < 0.2 * avg:
+                    h["status"] = "warning"
+                    h["last_error"] = (
+                        f"Volume anômalo: {synced + updated} vs. média "
+                        f"{avg:.1f} (últimos {len(eligible)} ciclos). "
+                        f"Pode ser paginação truncada."
+                    )
+                    logger.warning(
+                        f"[{source}] {h['last_error']}"
+                    )
+        except Exception as ae:  # noqa: BLE001
+            logger.debug(f"volume anomaly check failed (non-fatal): {ae}")
+
+        # Record the "when" so the watchdog can detect stalls
+        h["last_run"] = datetime.now(timezone.utc).isoformat()
         logger.info(f"Auto-sync {source.title()}: {synced} new, {updated} updated")
         await _persist_health(source)
 
@@ -354,6 +445,7 @@ async def _run_sync_with_health(source: str, scraper, start_str: str, end_str: s
         h["status"] = "down" if h["consecutive_failures"] + 1 >= 2 else "warning"
         h["consecutive_failures"] += 1
         h["last_failure"] = datetime.now(timezone.utc).isoformat()
+        h["last_run"] = datetime.now(timezone.utc).isoformat()
         h["last_error"] = str(e)[:300]
         logger.error(f"Auto-sync {source.title()} error: {e} (consecutive failures: {h['consecutive_failures']})")
         await _persist_health(source)
@@ -2351,16 +2443,43 @@ async def get_sync_status(sync_id: str, _: dict = Depends(verify_token)):
 
 @api_router.get("/scrapers/health")
 async def scrapers_health(_: dict = Depends(verify_token)):
-    """Public health snapshot of Telecontrol scrapers used by the header badge."""
+    """Public health snapshot of Telecontrol scrapers used by the header badge.
+
+    Returns:
+        overall: 'ok' | 'warning' | 'down'
+        overall_message: human-friendly badge text, e.g. "Scraper Hisense falhou"
+        scrapers: per-source detail (consecutive_failures, last_success,
+                  last_failure, last_error, last_run, recent_volumes, last_volume)
+    """
     overall = "ok"
-    for src, h in SCRAPER_HEALTH.items():
-        if h["consecutive_failures"] >= 2:
-            overall = "down"
-            break
-        elif h["consecutive_failures"] >= 1 and overall == "ok":
-            overall = "warning"
+    # Deterministic label order so the badge message is stable.
+    sources = sorted(SCRAPER_HEALTH.keys())
+    down_sources = []
+    warning_sources = []
+    for src in sources:
+        h = SCRAPER_HEALTH[src]
+        if h["consecutive_failures"] >= 2 or h.get("status") == "down":
+            down_sources.append(src)
+        elif h["consecutive_failures"] >= 1 or h.get("status") == "warning":
+            warning_sources.append(src)
+
+    if down_sources:
+        overall = "down"
+    elif warning_sources:
+        overall = "warning"
+
+    if down_sources:
+        names = ", ".join(s.title() for s in down_sources)
+        message = f"Scraper {names} falhou"
+    elif warning_sources:
+        names = ", ".join(s.title() for s in warning_sources)
+        message = f"Scraper {names} instável"
+    else:
+        message = "Scrapers OK"
+
     return {
         "overall": overall,
+        "overall_message": message,
         "scrapers": SCRAPER_HEALTH,
     }
 

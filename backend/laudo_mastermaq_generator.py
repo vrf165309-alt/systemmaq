@@ -5,9 +5,23 @@ Distinguishing features vs. the Hisense generator (`laudo_generator.py`):
   * No serial_number, batch, installation_correct
   * No voltage (F1F2, F1_Terra, F2_Terra)
   * No technical_notes, final_status
-  * Only 1 photo slot: "Defeito/Erro Encontrado" (uses images[7] from the
-    shared 8-photo grid the user fills in the LaudoModal — same slot as the
-    Hisense "FOTO 8" so the user doesn't have to rearrange).
+
+Photo mapping (empirically derived from XML analysis, 21/07/2026):
+  The template ships with FOUR labeled photo slots but only THREE unique image
+  files — rId7 (image1) is embedded TWICE, so "FOTO 1" and "FOTO 2" of the
+  template rendered the same image. To place four DISTINCT photos, this
+  generator patches the document.xml at generation time so the second
+  occurrence of rId7 becomes rId200, then injects a new relationship pointing
+  to a new "image_foto2.jpeg" file.
+
+  Mapping from the LaudoModal 8-photo grid → Mastermaq template slots:
+    Template FOTO 1 (Instalação do Produto)     ← images[0]  (modal FOTO 1)
+    Template FOTO 2 (Instalação do Produto)     ← images[1]  (modal FOTO 2)
+    Template FOTO 3 (Defeito/Erro Encontrado)   ← images[6]  (modal FOTO 7, "Defeito/Erro")
+    Template FOTO 4 (Instalação Elétrica)       ← images[3]  (modal FOTO 4, "Instalação Elétrica")
+
+  Labels of modal and template are aligned semantically so techs upload once
+  and both laudos (Hisense + Mastermaq) render correctly without rearranging.
 
 Replacement is done at the run level of python-docx so the template's
 paragraph alignment, font family, font size, bold/italic and color are
@@ -19,7 +33,7 @@ import logging
 import zipfile
 
 from docx import Document
-from docx.oxml.ns import qn
+from docx.oxml.ns import qn  # noqa: F401  (kept for future needs)
 
 from laudo_generator import (
     _decode_base64_image,
@@ -30,19 +44,31 @@ logger = logging.getLogger(__name__)
 
 TEMPLATE_PATH = Path(__file__).parent / "templates" / "laudo_mastermaq_template.docx"
 
-# LaudoModal fills 8 photo slots (images[0..7]). The Mastermaq template uses a
-# single defect photo — sourced from the "FOTO 8 – Defeito/Erro Encontrado"
-# slot so the user doesn't have to rearrange photos between templates.
-DEFECT_PHOTO_INDEX = 7
-
-# rId7 / rId8 / rId9 → image1/image2/image3.jpeg in the template body.
-# The defect photo is written to all three body slots so the layout stays
-# balanced (template ships with 3 side-by-side placeholders).
-PHOTO_SLOTS = [
-    "word/media/image1.jpeg",
-    "word/media/image2.jpeg",
-    "word/media/image3.jpeg",
+# LaudoModal grid index → template slot mapping. Indices reference `images`
+# in the LaudoModal payload (0-based: images[0] is modal "FOTO 1").
+#
+# Ordered so the SAME order is used both by the media-file writer AND by the
+# XML/rels patcher below — index 0 goes to image1.jpeg (via rId7), index 1
+# goes to the NEW image_foto2.jpeg (via rId200), etc.
+SLOT_MAP = [
+    # (modal_photo_index, target_filename_in_zip, target_rid)
+    # NOTE: In the template document.xml the FIRST occurrence of
+    # `r:embed="rId7"` renders in the RIGHT column (visual "FOTO 2"),
+    # and the SECOND occurrence renders in the LEFT column
+    # (visual "FOTO 1"). We patch the SECOND occurrence to rId200, so:
+    #   rId7   -> right slot (FOTO 2) -> images[1]  (modal FOTO 2)
+    #   rId200 -> left slot  (FOTO 1) -> images[0]  (modal FOTO 1)
+    (1, "word/media/image1.jpeg",       "rId7"),    # Template FOTO 2 (right)
+    (0, "word/media/image_foto2.jpeg",  "rId200"),  # Template FOTO 1 (left)  [NEW rId]
+    (6, "word/media/image2.jpeg",       "rId8"),    # Template FOTO 3 (Defeito/Erro ← modal FOTO 7)
+    (3, "word/media/image3.jpeg",       "rId9"),    # Template FOTO 4 (Elétrica ← modal FOTO 4)
 ]
+
+# Legacy alias kept for any external caller that still references the previous
+# single-slot behaviour. Not used inside this module anymore.
+DEFECT_PHOTO_INDEX = 6
+
+PHOTO_SLOTS = [entry[1] for entry in SLOT_MAP]  # noqa: F841 (external readers)
 
 
 def _set_cell_text_preserving_runs(cell, new_text: str) -> None:
@@ -144,22 +170,34 @@ def generate_mastermaq_laudo(data: dict) -> bytes:
     _set_cell_text_preserving_runs(table1.rows[1].cells[1], data.get("technical_diagnosis", ""))
     _set_cell_text_preserving_runs(table1.rows[2].cells[1], _up(data.get("required_parts", "")))
 
-    # === Defect photo (single slot from LaudoModal index 7) =============
+    # === Photos — 4 distinct slots =====================================
+    # See SLOT_MAP at the top of this file. The template ships with rId7
+    # embedded twice (image1 duplicated), so before we swap bytes we also
+    # need to patch document.xml so the second rId7 becomes rId200 and
+    # add a new relationship rId200 -> media/image_foto2.jpeg. Without
+    # that patch, template FOTO 1 and FOTO 2 would keep rendering the
+    # same image no matter what we do at the ZIP level.
     images_raw = data.get("images") or []
-    defect_img = images_raw[DEFECT_PHOTO_INDEX] if DEFECT_PHOTO_INDEX < len(images_raw) else ""
-
-    photo_replacements: dict = {}
-    decoded = _decode_base64_image(defect_img)
-    if decoded:
+    photo_replacements: dict = {}  # zip filename -> jpeg bytes to inject
+    new_rels: list = []            # (rId, target) tuples to append to rels
+    filled_slots = 0
+    for modal_idx, target_fname, target_rid in SLOT_MAP:
+        raw = images_raw[modal_idx] if modal_idx < len(images_raw) else ""
+        decoded = _decode_base64_image(raw)
+        if not decoded:
+            continue
         processed = _to_jpeg_bytes(decoded)
-        for fname in PHOTO_SLOTS:
-            photo_replacements[fname] = processed
-        logger.info(
-            "MASTERMAQ LAUDO: defect photo (index %d) applied to %d body slot(s)",
-            DEFECT_PHOTO_INDEX, len(PHOTO_SLOTS),
-        )
-    else:
-        logger.info("MASTERMAQ LAUDO: no defect photo provided; template placeholders kept")
+        photo_replacements[target_fname] = processed
+        # For the NEW rId (rId200, mapped to image_foto2.jpeg), we also
+        # need a relationship pointing to it — the template doesn't have
+        # one yet.
+        if target_rid == "rId200":
+            new_rels.append((target_rid, "media/image_foto2.jpeg"))
+        filled_slots += 1
+    logger.info(
+        "MASTERMAQ LAUDO: %d/%d photo slots filled from modal grid",
+        filled_slots, len(SLOT_MAP),
+    )
 
     buf = io.BytesIO()
     doc.save(buf)
@@ -168,15 +206,63 @@ def generate_mastermaq_laudo(data: dict) -> bytes:
     if not photo_replacements:
         return buf.getvalue()
 
-    # Rewrite the DOCX zip to swap the image bytes at binary level.
+    # Rewrite the DOCX zip:
+    #  1. Patch document.xml: turn the SECOND occurrence of `r:embed="rId7"`
+    #     into `r:embed="rId200"` (only if we're actually providing a distinct
+    #     FOTO 2). The FIRST occurrence stays as rId7 -> image1.jpeg.
+    #  2. Patch word/_rels/document.xml.rels: append the new relationship
+    #     for rId200 (if used).
+    #  3. Swap the media/imageN.jpeg files in `photo_replacements`.
+    #  4. Add media/image_foto2.jpeg as a new file (if used).
+    need_rid200 = any(rid == "rId200" for rid, _ in new_rels)
     src = zipfile.ZipFile(buf, "r")
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
         for item in src.namelist():
             data_bytes = src.read(item)
-            if item in photo_replacements:
+
+            if item == "word/document.xml" and need_rid200:
+                # Only rewrite the SECOND occurrence of r:embed="rId7".
+                xml = data_bytes.decode("utf-8")
+                first = xml.find('r:embed="rId7"')
+                if first != -1:
+                    second = xml.find('r:embed="rId7"', first + 1)
+                    if second != -1:
+                        xml = (
+                            xml[:second]
+                            + 'r:embed="rId200"'
+                            + xml[second + len('r:embed="rId7"'):]
+                        )
+                        logger.info(
+                            "MASTERMAQ LAUDO: patched 2nd rId7 -> rId200 (offset %d)",
+                            second,
+                        )
+                data_bytes = xml.encode("utf-8")
+
+            elif item == "word/_rels/document.xml.rels" and new_rels:
+                rels_xml = data_bytes.decode("utf-8")
+                # Insert new <Relationship .../> before the closing tag.
+                additions = "".join(
+                    f'<Relationship Id="{rid}" '
+                    f'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" '
+                    f'Target="{target}"/>'
+                    for rid, target in new_rels
+                )
+                rels_xml = rels_xml.replace("</Relationships>", additions + "</Relationships>")
+                data_bytes = rels_xml.encode("utf-8")
+
+            elif item in photo_replacements:
                 data_bytes = photo_replacements[item]
+
             zout.writestr(item, data_bytes)
+
+        # Add brand-new media file (image_foto2.jpeg) if the template
+        # didn't already have it. This only fires when SLOT_MAP entry for
+        # modal FOTO 2 actually had bytes.
+        new_media = "word/media/image_foto2.jpeg"
+        if new_media in photo_replacements and new_media not in src.namelist():
+            zout.writestr(new_media, photo_replacements[new_media])
+
     src.close()
     out.seek(0)
     return out.getvalue()

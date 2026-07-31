@@ -1744,6 +1744,21 @@ const OrderDetailModal = ({ open, onClose, order, onUpdate, onWhatsApp, onMaps, 
 
   // MERGE-ONLY sync from parent: quando parent atualiza `order` com fresh
   // data, preencher SÓ campos vazios em editedOrder sem sobrescrever edits.
+  //
+  // BUG FIX (photos "sumindo" ao reabrir OS):
+  // Antes esse merge pulava explicitamente qualquer photo_* (linha `if
+  // (k.startsWith('photo_')) continue`). A intenção original era não
+  // sobrescrever uma foto que o usuário acabou de subir mas o backend
+  // ainda não confirmou. Só que o guard já é feito pelo `isPrevEmpty` —
+  // pular photo_* incondicionalmente também bloqueava o caso legítimo:
+  // handleOrderClick abre o modal com o snapshot da lista (SEM fotos,
+  // pra não pesar) e dispara um GET ?include_photos=1 em paralelo; quando
+  // esse GET volta, este effect deveria hidratar as fotos no editedOrder.
+  // Como estava pulando photo_*, as fotos JAMAIS eram copiadas — parecia
+  // que "sumiram", mesmo intactas no banco.
+  // Agora photo_* segue o mesmo caminho dos outros campos: se local está
+  // vazio E chegou algo do backend, preenche. Se local já tem dataURL
+  // (upload em progresso), NÃO sobrescreve porque isPrevEmpty === false.
   useEffect(() => {
     if (!order || !editedOrder) return;
     if (order.os_number !== editedOrder.os_number) return;
@@ -1752,7 +1767,6 @@ const OrderDetailModal = ({ open, onClose, order, onUpdate, onWhatsApp, onMaps, 
       const next = { ...prev };
       let changed = false;
       for (const k of Object.keys(order)) {
-        if (k.startsWith('photo_')) continue;
         const prevVal = prev[k];
         const isPrevEmpty = prevVal === undefined || prevVal === null || prevVal === '';
         if (isPrevEmpty && order[k] !== undefined && order[k] !== null && order[k] !== '') {

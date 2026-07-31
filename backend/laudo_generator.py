@@ -16,36 +16,27 @@ logger = logging.getLogger(__name__)
 
 TEMPLATE_PATH = Path(__file__).parent / "laudo_template.docx"
 
-# Map: user image index -> image filename in ZIP.
-# Mapping was RE-DERIVED EMPIRICALLY (20/07/2026) by injecting distinct solid-color
-# JPEGs into each rId of the template and rendering with LibreOffice. Only 4 rIds
-# actually anchor INSIDE the visible "FOTO N" labeled slots — the remaining 4 rIds
-# are floating "orphans" from the original template layout. We still allocate
-# them to FOTO 3/6/7/8 so no photo is silently discarded.
-#
-#   rId7  (image1) → INSIDE label FOTO 1 (page 1, left top)      → FOTO 1 ✅
-#   rId8  (image2) → INSIDE label FOTO 2 (page 1, right top)     → FOTO 2 ✅
-#   rId9  (image3) → orphan bottom page 1 left  (V=627)          → FOTO 3
-#   rId13 (image7) → INSIDE label FOTO 4 (page 2, right top)     → FOTO 4 ✅  [FIX]
-#   rId12 (image6) → INSIDE label FOTO 5 (page 2, left mid)      → FOTO 5 ✅
-#   rId14 (image8) → orphan mid page 2 right                     → FOTO 6      [FIX]
-#   rId15 (image9) → orphan bottom page 2 left                   → FOTO 7
-#   rId10 (image4) → orphan bottom page 2 right                  → FOTO 8      [FIX]
-#   rId11 (image5) → EXTRA anchor above/behind FOTO 4 area — blanked
-#   rId16 (image10.png) → decorative voltage diagram, not touched
-#
-# Previous mapping (buggy): FOTO 4→image4, FOTO 6→image7, FOTO 8→image8. That
-# caused FOTO 6 to render inside the FOTO 4 slot and left FOTO 4 empty, which
-# users reported as "somente a primeira imagem em todas" (photos in wrong slots).
+# Map: user image index -> image filename in ZIP
+# Mapping determined by XML position analysis (anchor offsets + paragraph grouping):
+#   rId7  (image1) -> H=41pt left, V=87pt top (margin) = FOTO 1 (left, page 1)
+#   rId8  (image2) -> H=125pt left, V=106pt top (margin) = FOTO 2 (right, page 1)
+#   rId9  (image3) -> H=67pt left, V=627pt top (margin) = FOTO 3 (left, bottom page 1)
+#   rId10 (image4) -> H=349pt left, V=627pt top (margin) = FOTO 4 (right, bottom page 1)
+#   rId12 (image6) -> H=72pt left (column-relative) = FOTO 5 (left, page 2)
+#   rId13 (image7) -> H=356pt left (margin) = FOTO 6 (right, page 2)
+#   rId15 (image9) -> H=58pt left (column-relative) = FOTO 7 (left, page 2/3)
+#   rId14 (image8) -> H=325pt left (margin) = FOTO 8 (right, page 2/3)
+#   rId11 (image5) -> extra image in P[38] group, blanked out
+#   rId16 (image10.png) -> decorative voltage diagram, not touched
 PHOTO_SLOTS = {
     0: 'word/media/image1.jpeg',   # FOTO 1 (rId7)
     1: 'word/media/image2.jpeg',   # FOTO 2 (rId8)
     2: 'word/media/image3.jpeg',   # FOTO 3 (rId9)
-    3: 'word/media/image7.jpeg',   # FOTO 4 (rId13)  ← was image4 (BUG FIX)
+    3: 'word/media/image4.jpeg',   # FOTO 4 (rId10)
     4: 'word/media/image6.jpeg',   # FOTO 5 (rId12)
-    5: 'word/media/image8.jpeg',   # FOTO 6 (rId14)  ← was image7 (BUG FIX)
+    5: 'word/media/image7.jpeg',   # FOTO 6 (rId13)
     6: 'word/media/image9.jpeg',   # FOTO 7 (rId15)
-    7: 'word/media/image4.jpeg',   # FOTO 8 (rId10)  ← was image8 (BUG FIX)
+    7: 'word/media/image8.jpeg',   # FOTO 8 (rId14)
 }
 
 # Extra image that should be blanked when user provides photos

@@ -375,7 +375,8 @@ const DashboardLayout = ({ children, unreadCount = 0 }) => {
                   >
                     <Activity size={16} className={scraperHealth.overall === 'down' ? 'animate-pulse' : ''} />
                     <span className="text-xs font-medium hidden sm:inline">
-                      {scraperHealth.overall === 'down' ? 'Scraper OFF' : 'Scraper instável'}
+                      {scraperHealth.overall_message ||
+                        (scraperHealth.overall === 'down' ? 'Scraper OFF' : 'Scraper instável')}
                     </span>
                   </Button>
                 </DropdownMenuTrigger>
