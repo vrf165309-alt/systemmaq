@@ -563,5 +563,210 @@
     "mtime": 1784506458.4372098,
     "ast_hash": "36aa9b78b425171fee4f6d933e71b3c8",
     "semantic_hash": "36aa9b78b425171fee4f6d933e71b3c8"
+  },
+  ".emergent/emergent.yml": {
+    "mtime": 1784506458.4142098,
+    "ast_hash": "d52cae9d00ecdbf0636fe6f6715e81bf",
+    "semantic_hash": ""
+  },
+  ".emergent/system_deps.txt": {
+    "mtime": 1785527404.7355585,
+    "ast_hash": "8af59639578377a43a77c0808fe2eb3d",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1784506458.42221,
+    "ast_hash": "20ebf99d76ca267e4b840f81caa5631d",
+    "semantic_hash": ""
+  },
+  "backend/requirements.txt": {
+    "mtime": 1784506458.42821,
+    "ast_hash": "a24e0d0fac741a5b253490ee24884d1b",
+    "semantic_hash": ""
+  },
+  "frontend/README.md": {
+    "mtime": 1784506458.43521,
+    "ast_hash": "33822368bfb3ad3de6fceb9cd76aa0dd",
+    "semantic_hash": ""
+  },
+  "frontend/public/index.html": {
+    "mtime": 1784506458.43821,
+    "ast_hash": "add2ea50194d1d4aaa08a7750ded8252",
+    "semantic_hash": ""
+  },
+  "frontend/public/offline.html": {
+    "mtime": 1784506458.43821,
+    "ast_hash": "bf45b2cf6c60050f1dc1772402f848b1",
+    "semantic_hash": ""
+  },
+  "info.md": {
+    "mtime": 1784506458.4442098,
+    "ast_hash": "3d572e1e0081671a2188239984cf8f9b",
+    "semantic_hash": ""
+  },
+  "memory/MIGRATION_GUIDE.md": {
+    "mtime": 1784506458.44621,
+    "ast_hash": "e648a3290d7de1190fa9b25ab76d9069",
+    "semantic_hash": ""
+  },
+  "memory/PRD.md": {
+    "mtime": 1785527510.7425587,
+    "ast_hash": "9101a1d23e1710e7ddc904811c03500f",
+    "semantic_hash": ""
+  },
+  "memory/graphify_usage.md": {
+    "mtime": 1785528231.9475598,
+    "ast_hash": "2f66e57626efbe8617dcbe5407392b4c",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/bertazzoni-logo.png": {
+    "mtime": 1784506458.43521,
+    "ast_hash": "0c3fd741c0f5ab1ec3a89df82adea2da",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/brastemp-logo.png": {
+    "mtime": 1784506458.43521,
+    "ast_hash": "eb544b22aeb1e81801773fa19837513b",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/consul-logo.png": {
+    "mtime": 1784506458.43521,
+    "ast_hash": "6b7df3d753cb267b56ca99566b01eefa",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/electrolux-logo.png": {
+    "mtime": 1784506458.43521,
+    "ast_hash": "d6b4597d9900d6f0d15d9219cd0426ee",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/franke-logo.png": {
+    "mtime": 1784506458.43621,
+    "ast_hash": "d71435d25fd4c2595f16e3da69d9e986",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/gorenje-logo.png": {
+    "mtime": 1784506458.43621,
+    "ast_hash": "3a7d3237f47ee1d3cb83d3e113c54518",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/hisense-logo.png": {
+    "mtime": 1784506458.43621,
+    "ast_hash": "3c5e497e42af6ab94ff45d93447c6b2f",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/hq-logo.png": {
+    "mtime": 1784506458.43621,
+    "ast_hash": "a0938f5642b4a2fbd822fe8b2aebb39e",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/invisacook-logo.png": {
+    "mtime": 1784506458.43621,
+    "ast_hash": "840ac077e135daa51ae3feab6b21fa81",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/invisacook-logo.webp": {
+    "mtime": 1784506458.43621,
+    "ast_hash": "8ddfaec9d588b30c2342b307917789ba",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/liebherr-logo.png": {
+    "mtime": 1784506458.43621,
+    "ast_hash": "01abbba44a262b9853b90da7e9ed69c1",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/lofra-logo.png": {
+    "mtime": 1784506458.43621,
+    "ast_hash": "062b4609678bd87afc03672f1c6f1103",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/maps-logo.png": {
+    "mtime": 1784506458.43621,
+    "ast_hash": "2d2768530ebc108fd412a1d19c72de13",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/mastermaq-logo.png": {
+    "mtime": 1784506458.4372098,
+    "ast_hash": "012e7f277c2dc23b2e95f47ca9da0e32",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/mi-ia.webp": {
+    "mtime": 1784506458.4372098,
+    "ast_hash": "6b51557f610b0c8579a46e6be14360f9",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/moto-mastermaq.png": {
+    "mtime": 1784506458.4372098,
+    "ast_hash": "eedba8917f32da1ea2224b31d679ce51",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/panasonic-logo.png": {
+    "mtime": 1784506458.4372098,
+    "ast_hash": "d58f731886c4e40431be3869a019505c",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/qr-code.png": {
+    "mtime": 1784506458.4372098,
+    "ast_hash": "468d5978c2330780d696e64953b82c31",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/samsung-logo.png": {
+    "mtime": 1784506458.4372098,
+    "ast_hash": "125793af8beadc1d082cd717e840e18c",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/source-site.png": {
+    "mtime": 1784506458.4372098,
+    "ast_hash": "4bc95f9ecc57b575592c909e722fe872",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/tecno-logo.png": {
+    "mtime": 1784506458.4372098,
+    "ast_hash": "103501b9989f173596f22fcd78ff7e4e",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/telecontrol-logo.png": {
+    "mtime": 1784506458.4372098,
+    "ast_hash": "c3e3588361f98d454f0f4fc589eea9cd",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/viking-logo.png": {
+    "mtime": 1784506458.4372098,
+    "ast_hash": "eca8621cbedcecfdffd753269b39ff56",
+    "semantic_hash": ""
+  },
+  "frontend/public/assets/whatsapp-logo.png": {
+    "mtime": 1784506458.4372098,
+    "ast_hash": "835c9dc6c9657fc5a39e6a013e82288c",
+    "semantic_hash": ""
+  },
+  "frontend/public/icons/apple-touch-icon.png": {
+    "mtime": 1784506458.43821,
+    "ast_hash": "cdd5a2313a76d622b88b116b56f93fd1",
+    "semantic_hash": ""
+  },
+  "frontend/public/icons/favicon-16.png": {
+    "mtime": 1784506458.43821,
+    "ast_hash": "26d88ac1b94b37c673804a2e7beef799",
+    "semantic_hash": ""
+  },
+  "frontend/public/icons/favicon-32.png": {
+    "mtime": 1784506458.43821,
+    "ast_hash": "e8bb3eacf8b5bf43b0307f09caf17974",
+    "semantic_hash": ""
+  },
+  "frontend/public/icons/icon-192.png": {
+    "mtime": 1784506458.43821,
+    "ast_hash": "452ab6f1a880c9bb16ebf0b4d427dcfe",
+    "semantic_hash": ""
+  },
+  "frontend/public/icons/icon-512.png": {
+    "mtime": 1784506458.43821,
+    "ast_hash": "390c114c4a65c846a188449a608a8bc9",
+    "semantic_hash": ""
+  },
+  "frontend/public/icons/mastermaq-original.png": {
+    "mtime": 1784506458.43821,
+    "ast_hash": "a94e945344fe600b5e2041e372d84964",
+    "semantic_hash": ""
   }
 }
