@@ -8,7 +8,8 @@
 -- Mongo sidecar collection `product_metadata` and merges them at read
 -- time. The API contract is unchanged — clients see `image_url` and
 -- `product_type` on every product regardless. Running this migration lets
--- Supabase itself become the single source of truth and lets `image_url`
+-- Supabase itself become the s
+ingle source of truth and lets `image_url`
 -- be indexed/queried like any other Supabase column.
 --
 -- After you run this, the sidecar keeps working (as a redundant fallback)

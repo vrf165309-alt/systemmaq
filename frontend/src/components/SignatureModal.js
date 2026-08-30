@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Loader2, ChevronRight, Check, RotateCcw } from 'lucide-react';
+import { Loader2, ChevronRight, Check, RotateCcw, Send } from 'lucide-react';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -121,6 +121,8 @@ const SignatureModal = ({ open, onClose, order, onSigned, getAuthHeader, isOverl
   const [sigClient, setSigClient] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [linkSending, setLinkSending] = useState(false);
+  const [linkSent, setLinkSent] = useState(null); // { url, whatsapp_url }
 
   useEffect(() => {
     if (open) {
@@ -133,6 +135,8 @@ const SignatureModal = ({ open, onClose, order, onSigned, getAuthHeader, isOverl
       setClientName(order?.customer_name || '');
       setClientCpf('');
       setSavedTechSig(null);
+      setLinkSent(null);
+      setLinkSending(false);
     }
   }, [open, order]);
 
@@ -210,6 +214,61 @@ const SignatureModal = ({ open, onClose, order, onSigned, getAuthHeader, isOverl
       setSubmitting(false);
     }
   }, [API, order, sigTech, clientName, clientCpf, getAuthHeader, onSigned, onClose]);
+
+  // ─── Enviar link ao cliente por WhatsApp ─────────────────────────
+  // Gera um token único no backend com a assinatura do técnico já
+  // capturada e abre o WhatsApp do cliente com uma mensagem pronta
+  // contendo o link. O cliente assina pelo próprio celular.
+  const handleSendLink = useCallback(async () => {
+    if (!sigTech) {
+      setError('Assinatura do técnico é necessária antes de enviar o link.');
+      return;
+    }
+    setLinkSending(true);
+    setError(null);
+    try {
+      const resp = await fetch(`${API}/api/service-orders/${order.os_number}/signature-link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeader().headers },
+        body: JSON.stringify({
+          technician_signature: sigTech,
+          technician_name: techName.trim(),
+          client_name: clientName.trim(),
+          client_cpf: clientCpf.trim(),
+        })
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.detail || 'Erro ao gerar link');
+      }
+      const data = await resp.json();
+      // Sempre reconstruir a URL usando o origin que o cliente ESTÁ vendo
+      // — o backend pode devolver o host do cluster interno se o header
+      // Origin da chamada não bater com o domínio público.
+      const absoluteUrl = `${window.location.origin}/sign/${data.token}`;
+      let whatsUrl = data.whatsapp_url || '';
+      if (whatsUrl) {
+        // Substitui QUALQUER URL de /sign/${token} pela absoluta correta
+        // (a mensagem do wa.me pode ter o valor errado embutido).
+        try {
+          const u = new URL(whatsUrl);
+          const text = u.searchParams.get('text') || '';
+          // Regex substitui qualquer URL até /sign/<token>
+          const fixed = text.replace(/https?:\/\/[^\s]*\/sign\/[a-f0-9-]+/gi, absoluteUrl)
+                            .replace(/\/sign\/[a-f0-9-]+/gi, absoluteUrl);
+          u.searchParams.set('text', fixed);
+          whatsUrl = u.toString();
+        } catch (_) { /* fallback: uso da URL bruta */ }
+      }
+      setLinkSent({ url: absoluteUrl, whatsapp_url: whatsUrl });
+      // Abre o WhatsApp em nova aba
+      if (whatsUrl) window.open(whatsUrl, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLinkSending(false);
+    }
+  }, [API, order, sigTech, techName, clientName, clientCpf, getAuthHeader]);
 
   if (!order) return null;
 
@@ -318,23 +377,94 @@ const SignatureModal = ({ open, onClose, order, onSigned, getAuthHeader, isOverl
                 </Button>
               </div>
             )}
-            <SignaturePad
-              key="client"
-              label={`Assinatura do Cliente: ${clientName || order.customer_name}`}
-              onSave={handleClientConfirm}
-            />
-            <Button variant="ghost" size="sm" className="text-gray-500 mt-2"
-              onClick={() => {
-                if (useSavedTech) {
-                  setUseSavedTech(false);
-                  setSigTech(null);
-                  setStep(1);
-                } else {
-                  setStep(2);
-                }
-              }} data-testid="sig-back-2">
-              Voltar
-            </Button>
+
+            {/* ─── Enviar link para o cliente assinar pelo próprio celular ─── */}
+            {linkSent ? (
+              <div className="mb-4 p-4 rounded-lg border border-emerald-200 bg-emerald-50" data-testid="sig-link-sent">
+                <div className="flex items-start gap-2">
+                  <Check className="h-4 w-4 text-emerald-600 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-emerald-900">Link enviado</p>
+                    <p className="text-xs text-emerald-700 mt-0.5">
+                      O WhatsApp foi aberto em outra aba. O link expira em 7 dias.
+                    </p>
+                    <div className="mt-2 flex items-center gap-2 bg-white rounded border border-emerald-200 px-2 py-1">
+                      <input
+                        readOnly
+                        value={linkSent.url}
+                        className="flex-1 min-w-0 text-[11px] font-mono text-gray-700 bg-transparent outline-none"
+                        data-testid="sig-link-url"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => { navigator.clipboard?.writeText(linkSent.url).catch(() => {}); }}
+                        className="text-[11px] text-emerald-700 hover:text-emerald-900 font-medium flex-shrink-0"
+                        data-testid="sig-link-copy"
+                      >
+                        Copiar
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="mt-3 text-xs text-gray-500 hover:text-gray-700 underline"
+                      data-testid="sig-link-close"
+                    >
+                      Fechar (aguardando cliente assinar)
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="mb-4 p-3 rounded-lg border border-gray-200 bg-gray-50/50">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium text-gray-800">Cliente não está presente?</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
+                      Envie um link seguro pelo WhatsApp — o cliente assina no próprio celular.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSendLink}
+                    disabled={linkSending}
+                    className="flex-shrink-0 border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+                    data-testid="sig-send-link-btn"
+                  >
+                    {linkSending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Send className="h-3.5 w-3.5 mr-1" />}
+                    Enviar link
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {!linkSent && (
+              <>
+                <div className="text-[11px] uppercase tracking-wide text-gray-400 mb-2 flex items-center gap-2">
+                  <span>Ou o cliente assina agora</span>
+                  <div className="flex-1 h-px bg-gray-200" />
+                </div>
+                <SignaturePad
+                  key="client"
+                  label={`Assinatura do Cliente: ${clientName || order.customer_name}`}
+                  onSave={handleClientConfirm}
+                />
+                <Button variant="ghost" size="sm" className="text-gray-500 mt-2"
+                  onClick={() => {
+                    if (useSavedTech) {
+                      setUseSavedTech(false);
+                      setSigTech(null);
+                      setStep(1);
+                    } else {
+                      setStep(2);
+                    }
+                  }} data-testid="sig-back-2">
+                  Voltar
+                </Button>
+              </>
+            )}
           </div>
         )}
 

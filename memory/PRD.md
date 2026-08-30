@@ -75,9 +75,38 @@ O guard `isPrevEmpty` já protege contra sobrescrever fotos em upload local. O `
   * screen preview 3× antes de imprimir + botão explícito (não auto-print)
 - `LabelTemplatesPage.print()` agora mapeia size preset → sizeKey e delega para `printCustomLabel`. Presets 80×50 e 100×50 sem liner (paper = content). Tamanhos custom = paper próprio.
 
-## P0 investigado (não era bug de agendamento)
-- Scheduler dos scrapers (`hisense_loop` + `_scraper_watchdog`) confirmado rodando após restart do supervisor. Log mostra 74 ciclos executados, sync ativo a cada 30 min.
-- Últimos ciclos retornam `0 new, 0 updated` porque o auto-sync usa janela de 30 dias corridos (`datetime.now() - 30 days`), enquanto o `run_sync_manual.py` do usuário aponta para datas fixas do passado. Diferença é temporal, não de código.
+## Sessão 30/08/2026 (parte 2) — Link de assinatura remota via WhatsApp
+
+### 9. Link de assinatura pelo celular do cliente
+Cenário: o técnico está no cliente, mas o cliente não está presente (ou o técnico terminou o serviço e voltou para a loja). Antes só havia opção do cliente assinar no aparelho do técnico. Agora é possível gerar um link único que o cliente abre no próprio celular e assina.
+
+**Backend (`server.py`)**:
+- Nova collection MongoDB `signature_links` (sidecar): `{token, os_number, technician_signature, technician_name, client_name_hint, client_cpf_hint, status, created_at, expires_at, used_at}`.
+- `POST /api/service-orders/{os}/signature-link` (auth): gera `uuid4` como token, salva a assinatura do técnico + metadados, monta URL absoluta usando o `Origin`/`Referer` da chamada, monta mensagem WhatsApp pronta com `wa.me/55{phone}?text=...`. TTL 7 dias.
+- `GET /api/public/sign/{token}` (público): retorna só dados essenciais da OS (número, cliente, produto, defeito, técnico, status) — SEM telefone/endereço/valores. Valida expiração, status `used` e se a OS já foi assinada por outro caminho.
+- `POST /api/public/sign/{token}/submit` (público): aceita `signature_client` + `client_cpf` opcional. Persiste na OS reusando o mesmo pipeline de `sign_service_order` (Assinafy PDF em background). Marca token como `used` — single-use.
+
+**Frontend**:
+- Nova rota pública `/sign/:token` em `App.js` renderiza `PublicSignPage.js`. Visual clean, mobile-first: 
+  - Header com badge "Link seguro" (verde)
+  - Card "Confira os dados" com dados da OS em grid 2 colunas
+  - Card "Sua assinatura" com canvas retina-aware (DPR)+ campo CPF opcional
+  - Botão "Confirmar Assinatura" dark (slate-900) — grande, tap-friendly
+  - Estados: loading (spinner), erro (link expirado/usado), sucesso (ícone de escudo verde + "Assinatura registrada")
+- `SignatureModal.js`: no Step 3, além do canvas de assinatura, agora há um card `"Cliente não está presente? [Enviar link]"` (accent verde). Ao clicar:
+  1. Chama o endpoint de criação
+  2. Reconstrói a URL sempre com `window.location.origin` (evita cluster-hostname interno)
+  3. Substitui a URL na mensagem do wa.me
+  4. Abre `wa.me` em nova aba
+  5. Mostra card verde "Link enviado" com URL + botão "Copiar" + botão "Fechar (aguardando cliente assinar)"
+
+**Testado**:
+- `POST /signature-link` gerando token e URL absoluta corretos
+- `GET /public/sign/{token}` retornando dados da OS sem info sensível
+- `POST /submit` persistindo assinatura → OS ganha `signature_client`, `signature_technician`, `signature_date`
+- Re-submit no mesmo token → 410 "Link já utilizado"
+- Modal do técnico: fluxo Step 1 → Step 2 (assina) → Step 3 (clica "Enviar link") → wa.me abriu com telefone e mensagem prontos
+- Página pública mobile 428×926: layout perfeito, canvas responsivo, tela de sucesso profissional
 
 ## Stack
 - Frontend: React 19 (CRA + Craco), Tailwind, Shadcn/UI, lucide-react, axios, react-router 6

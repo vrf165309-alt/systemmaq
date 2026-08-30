@@ -1,16 +1,16 @@
 {
   ".emergent/cron/dispatch_webhook.sh": {
-    "mtime": 1788128543.8618355,
+    "mtime": 1788131441.572792,
     "ast_hash": "ea59c1bd709230292f41050e93dfa946",
     "semantic_hash": "ea59c1bd709230292f41050e93dfa946"
   },
   ".emergent/cron/watch_crons.sh": {
-    "mtime": 1788128543.8788357,
+    "mtime": 1788131441.586792,
     "ast_hash": "1071ad1de232d3d12dea92619ce92699",
     "semantic_hash": "1071ad1de232d3d12dea92619ce92699"
   },
   ".emergent/cron/webhook_crond.sh": {
-    "mtime": 1788128543.8698356,
+    "mtime": 1788131441.579792,
     "ast_hash": "a5414eb2f0aba69421eef8c4c2aa8954",
     "semantic_hash": "a5414eb2f0aba69421eef8c4c2aa8954"
   },
@@ -165,8 +165,8 @@
     "semantic_hash": "ac9c2af2db2b52efd59df617ae3d3939"
   },
   "frontend/src/components/DashboardLayout.js": {
-    "mtime": 1786992443.1263757,
-    "ast_hash": "3f472da46c53e0658b1c9ad70ca349c1",
+    "mtime": 1788131751.6447875,
+    "ast_hash": "fef41704dd2ec793098ca8c4adee8291",
     "semantic_hash": ""
   },
   "frontend/src/components/LaudoModal.js": {
@@ -475,9 +475,9 @@
     "semantic_hash": ""
   },
   "frontend/src/pages/LabelTemplatesPage.js": {
-    "mtime": 1784506458.4402099,
-    "ast_hash": "915f8741cb8ffa5d94cf00ccc3d5c8cd",
-    "semantic_hash": "915f8741cb8ffa5d94cf00ccc3d5c8cd"
+    "mtime": 1788131818.5357864,
+    "ast_hash": "ac781b88737fd0b295ad6a046b0014b6",
+    "semantic_hash": ""
   },
   "frontend/src/pages/LoginPage.js": {
     "mtime": 1784506458.4402099,
@@ -515,8 +515,8 @@
     "semantic_hash": "211d2c6f5a7327d44a46ea6a50f15d70"
   },
   "frontend/src/pages/ServiceOrdersPage.js": {
-    "mtime": 1786393623.3766935,
-    "ast_hash": "812b5128e55cabbae26a3f142e34f1d3",
+    "mtime": 1788131727.027788,
+    "ast_hash": "a188d3f3686d800ed3655354ceb246b1",
     "semantic_hash": ""
   },
   "frontend/src/pages/UsersPage.js": {
@@ -550,9 +550,9 @@
     "semantic_hash": "6b48257dbc84cc098d8ff88a2acb9f13"
   },
   "frontend/src/utils/printingService.js": {
-    "mtime": 1784506458.44121,
-    "ast_hash": "cd5759988586b9c2479e903adbaf1f26",
-    "semantic_hash": "cd5759988586b9c2479e903adbaf1f26"
+    "mtime": 1788131797.7057867,
+    "ast_hash": "e0ab5e70aa3c4568860a8c1a27d3b9f1",
+    "semantic_hash": ""
   },
   "frontend/tailwind.config.js": {
     "mtime": 1784506458.44121,
@@ -610,8 +610,8 @@
     "semantic_hash": ""
   },
   "memory/PRD.md": {
-    "mtime": 1785527510.7425587,
-    "ast_hash": "9101a1d23e1710e7ddc904811c03500f",
+    "mtime": 1788131947.8997846,
+    "ast_hash": "849ce754d8947cd836f3d3a18eca0170",
     "semantic_hash": ""
   },
   "memory/graphify_usage.md": {

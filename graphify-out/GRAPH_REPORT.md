@@ -1,16 +1,16 @@
 # Graph Report - app  (2026-08-30)
 
 ## Corpus Check
-- 120 files · ~226,218 words
+- 120 files · ~227,695 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1189 nodes · 1931 edges · 125 communities (71 shown, 54 thin omitted)
+- 1195 nodes · 1940 edges · 128 communities (73 shown, 55 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 6 edges (avg confidence: 0.55)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `68311345`
+- Built from commit: `30f91bf1`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -28,11 +28,11 @@
 - TelecontrolScraper
 - DashboardLayout.js
 - App.js
-- UsersPage.js
+- button.jsx
 - post
 - utils.js
 - BaseModel
-- use-toast.js
+- form.jsx
 - components.json
 - cn
 - menubar.jsx
@@ -45,7 +45,7 @@
 - create_external_os
 - users_module.py
 - assinafy_service.py
-- ManuaisPage.js
+- label.jsx
 - update_service_order
 - LoginPage.js
 - command.jsx
@@ -58,7 +58,7 @@
 - migrate_railway.py
 - breadcrumb.jsx
 - drawer.jsx
-- carousel.jsx
+- ManuaisPage.js
 - navigation-menu.jsx
 - sheet.jsx
 - label_templates_module.py
@@ -77,7 +77,7 @@
 - CacheHeaderMiddleware
 - dispatch_webhook.sh
 - craco.config.js
-- AuthContext.js
+- dropdown-menu.jsx
 - Learn More
 - watch_crons.sh
 - axios
@@ -104,23 +104,23 @@
 - @radix-ui/react-hover-card
 - @radix-ui/react-label
 - @radix-ui/react-menubar
-- @radix-ui/react-navigation-menu
-- Sessão atual (20-31/07/2026)
+- input-otp.jsx
+- PRD — Mastermaq / Maq-Sync-Hub
 - @radix-ui/react-progress
 - @radix-ui/react-radio-group
-- @radix-ui/react-scroll-area
+- PublicTrackingPage.js
 - @radix-ui/react-select
-- @radix-ui/react-separator
+- qrcode
 - fabric
 - @radix-ui/react-slot
-- @radix-ui/react-switch
+- @radix-ui/react-popover
 - lucide-react
 - @radix-ui/react-toggle-group
 - @radix-ui/react-tooltip
 - @radix-ui/react-tabs
 - @react-google-maps/api
 - @radix-ui/react-toast
-- react-resizable-panels
+- @radix-ui/react-slider
 - avatar.jsx
 - react-scripts
 - recharts
@@ -134,10 +134,13 @@
 - README.md
 - next-themes
 - AsyncClient
+- @radix-ui/react-toggle
+- react-hook-form
+- react-router-dom
 
 ## God Nodes (most connected - your core abstractions)
 1. `cn()` - 67 edges
-2. `useAuth()` - 26 edges
+2. `useAuth()` - 25 edges
 3. `SupabaseCollection` - 19 edges
 4. `Button` - 16 edges
 5. `Label` - 13 edges
@@ -145,7 +148,7 @@
 7. `Input` - 12 edges
 8. `FindCursor` - 11 edges
 9. `DashboardLayout()` - 10 edges
-10. `get_db()` - 10 edges
+10. `printOSLabel()` - 10 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `NotificationsPanel()` --calls--> `useAuth()`  [EXTRACTED]
@@ -162,7 +165,7 @@
 ## Import Cycles
 - 3-file cycle: `frontend/src/components/DashboardLayout.js -> frontend/src/components/OrderDetailOverlay.js -> frontend/src/pages/ServiceOrdersPage.js -> frontend/src/components/DashboardLayout.js`
 
-## Communities (125 total, 54 thin omitted)
+## Communities (128 total, 55 thin omitted)
 
 ### Community 0 - "server.py"
 Cohesion: 0.04
@@ -189,12 +192,12 @@ Cohesion: 0.11
 Nodes (35): BreadcrumbPoint, create_share_token(), current_session(), end_tracking(), get_breadcrumbs(), get_live_position(), get_tracking_config(), GPSUpdate (+27 more)
 
 ### Community 6 - "RoutesPage.js"
-Cohesion: 0.05
-Nodes (44): react, useCarousel(), Checkbox, FormControl, FormDescription, FormFieldContext, FormItem, FormItemContext (+36 more)
+Cohesion: 0.10
+Nodes (25): Checkbox, Slider, supabase, buildMotoSVG(), buildTechIconSVG(), CreateRouteModal(), deduplicatePlaces(), EditRouteModal() (+17 more)
 
 ### Community 7 - "ServiceOrdersPage.js"
 Cohesion: 0.15
-Nodes (21): OrderDetailOverlay(), TabsContent, TabsList, TabsTrigger, BRAND_LIST, BrandLogo(), GARANTIA_SUBTYPES, getBrandLogo() (+13 more)
+Nodes (17): OrderDetailOverlay(), PopoverContent, TabsContent, TabsList, TabsTrigger, Textarea, BRAND_LIST, BrandLogo() (+9 more)
 
 ### Community 8 - "InventoryPage.js"
 Cohesion: 0.14
@@ -209,32 +212,32 @@ Cohesion: 0.09
 Nodes (19): Script para rodar o sync do Telecontrol manualmente, cobrindo um período…, Run sync for both Hisense and HQ Telecontrol, Run sync periodically every SYNC_INTERVAL_MINUTES, run_sync(), scheduler(), extract_brand_from_description(), Internal sync implementation, Close browser instance safely (+11 more)
 
 ### Community 11 - "DashboardLayout.js"
-Cohesion: 0.11
-Nodes (15): menuItems, NotificationsPanel(), DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioItem, DropdownMenuSeparator (+7 more)
+Cohesion: 0.18
+Nodes (7): menuItems, DropdownMenuContent, DropdownMenuItem, ScrollArea, ScrollBar, promptInstall(), setupInstallPrompt()
 
 ### Community 12 - "App.js"
 Cohesion: 0.11
-Nodes (20): App(), AppRoutes(), ProtectedRoute(), PublicRoute(), Toaster(), useAuth(), root, LabelTemplatesPage() (+12 more)
+Nodes (18): App(), AppRoutes(), ProtectedRoute(), PublicRoute(), Toaster(), AuthContext, AuthProvider(), failedQueue (+10 more)
 
-### Community 13 - "UsersPage.js"
-Cohesion: 0.16
-Nodes (12): LaudoModal(), PHOTO_LABELS, IMPORTANT: the OS PUT (step 2) is ADDITIVE — we only send a field if the, RECALL_PHOTO_LABELS, DialogContent, DialogDescription, DialogFooter(), DialogHeader() (+4 more)
+### Community 13 - "button.jsx"
+Cohesion: 0.15
+Nodes (13): LaudoModal(), PHOTO_LABELS, IMPORTANT: the OS PUT (step 2) is ADDITIVE — we only send a field if the, RECALL_PHOTO_LABELS, NotificationsPanel(), Button, DialogContent, DialogDescription (+5 more)
 
 ### Community 14 - "post"
 Cohesion: 0.10
 Nodes (21): create_token(), fire_test_webhook(), get_photos_status(), increment_print_count(), migrate_fix_aguardando_status(), migrate_statuses(), post, Increment and return print count for an OS. (+13 more)
 
 ### Community 15 - "utils.js"
-Cohesion: 0.09
-Nodes (14): AccordionContent, AccordionItem, AccordionTrigger, HoverCardContent, InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot (+6 more)
+Cohesion: 0.11
+Nodes (10): AccordionContent, AccordionItem, AccordionTrigger, HoverCardContent, Progress, RadioGroup, RadioGroupItem, Separator (+2 more)
 
 ### Community 16 - "BaseModel"
 Cohesion: 0.12
 Nodes (18): create_os_share_token(), create_service_order(), login(), LoginRequest, LoginResponse, Notification, OSShareTokenRequest, BaseModel (+10 more)
 
-### Community 17 - "use-toast.js"
-Cohesion: 0.16
-Nodes (18): Toast, ToastAction, ToastClose, ToastDescription, ToastTitle, toastVariants, ToastViewport, Toaster() (+10 more)
+### Community 17 - "form.jsx"
+Cohesion: 0.06
+Nodes (36): react, Carousel, CarouselContent, CarouselContext, CarouselItem, CarouselNext, CarouselPrevious, useCarousel() (+28 more)
 
 ### Community 18 - "components.json"
 Cohesion: 0.11
@@ -257,8 +260,8 @@ Cohesion: 0.15
 Nodes (15): _convert_pptx_to_pdf(), _find_soffice(), get_object(), init_storage(), _pdf_page_count(), put_object(), APIRouter, Manuais Module - File management for technical manuals Upload, organize by… (+7 more)
 
 ### Community 23 - "printingService.js"
-Cohesion: 0.30
-Nodes (14): qrcode, baseStyles(), calcQrSizeMm(), firstName(), fmtDate(), generateQRDataURL(), getOrigin(), LABEL_SIZES (+6 more)
+Cohesion: 0.19
+Nodes (20): LabelTemplatesPage(), GARANTIA_SUBTYPES, normalizeServiceType(), OrderDetailModal(), OS_STATUSES, SERVICE_TYPES, ServiceOrdersPage(), baseStyles() (+12 more)
 
 ### Community 25 - "manifest.json"
 Cohesion: 0.14
@@ -280,9 +283,9 @@ Nodes (11): hash_password(), BaseModel, Users module — RBAC (Admin vs Technici
 Cohesion: 0.17
 Nodes (11): create_assignment(), create_signer(), generate_os_pdf(), get_document_status(), Assinafy Digital Signature Service Handles PDF generation and Assinafy API…, Upload a PDF document to Assinafy and return the document data, Create a signer in Assinafy, Create a virtual assignment for the document (+3 more)
 
-### Community 30 - "ManuaisPage.js"
-Cohesion: 0.21
-Nodes (13): DashboardLayout(), Badge(), badgeVariants, Button, Input, Label, labelVariants, PRESETS (+5 more)
+### Community 30 - "label.jsx"
+Cohesion: 0.33
+Nodes (7): DashboardLayout(), Badge(), badgeVariants, Input, Label, labelVariants, PRESETS
 
 ### Community 31 - "update_service_order"
 Cohesion: 0.22
@@ -332,9 +335,9 @@ Nodes (7): Breadcrumb, BreadcrumbEllipsis(), BreadcrumbItem, BreadcrumbLink, Bre
 Cohesion: 0.25
 Nodes (6): DrawerContent, DrawerDescription, DrawerFooter(), DrawerHeader(), DrawerOverlay, DrawerTitle
 
-### Community 43 - "carousel.jsx"
-Cohesion: 0.29
-Nodes (6): Carousel, CarouselContent, CarouselContext, CarouselItem, CarouselNext, CarouselPrevious
+### Community 43 - "ManuaisPage.js"
+Cohesion: 0.20
+Nodes (12): SelectContent, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, DEFAULT_BRANDS (+4 more)
 
 ### Community 44 - "navigation-menu.jsx"
 Cohesion: 0.25
@@ -400,9 +403,9 @@ Nodes (3): CacheHeaderMiddleware, Cache policy: - Live data (service-orders, rou
 Cohesion: 0.50
 Nodes (3): config, path, webpackConfig
 
-### Community 62 - "AuthContext.js"
-Cohesion: 0.40
-Nodes (3): AuthContext, AuthProvider(), failedQueue
+### Community 62 - "dropdown-menu.jsx"
+Cohesion: 0.25
+Nodes (7): DropdownMenuCheckboxItem, DropdownMenuLabel, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuShortcut(), DropdownMenuSubContent, DropdownMenuSubTrigger
 
 ### Community 63 - "Learn More"
 Cohesion: 0.14
@@ -410,36 +413,44 @@ Nodes (13): Advanced Configuration, Analyzing the Bundle Size, Available Scripts
 
 ### Community 69 - "dependencies"
 Cohesion: 0.13
-Nodes (15): cra-template, dependencies, cra-template, @radix-ui/react-popover, @radix-ui/react-slider, @radix-ui/react-toggle, react-dom, react-hook-form (+7 more)
+Nodes (15): cra-template, dependencies, cra-template, @radix-ui/react-navigation-menu, @radix-ui/react-scroll-area, @radix-ui/react-separator, @radix-ui/react-switch, react-dom (+7 more)
 
 ### Community 76 - "force_resync"
 Cohesion: 0.25
 Nodes (8): force_resync(), Run sync for both Hisense and HQ in parallel. Parallel execution ensures the HQ…, Force a catch-up resync for a specific scraper (Hisense or HQ)., Run scraper sync, update health metrics, and trigger auto-resync on recovery.…, run_background_sync(), _run_sync_with_health(), trigger_telecontrol_sync(), BackgroundTasks
 
-### Community 90 - "Sessão atual (20-31/07/2026)"
-Cohesion: 0.18
-Nodes (10): 1. Migração do repositório (20/07), 2. Bug "Dados para Laudo apagam de um dia pro outro" (20/07), 3. Bug "somente 1ª imagem em todas" no laudo DOCX (21-31/07), 4. Scraper Telecontrol blindado (31/07), 5. Bug "fotos apagam ao reabrir OS" (31/07), Ambientes, Backlog, PRD — Mastermaq / Maq-Sync-Hub (+2 more)
+### Community 89 - "input-otp.jsx"
+Cohesion: 0.40
+Nodes (4): InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot
+
+### Community 90 - "PRD — Mastermaq / Maq-Sync-Hub"
+Cohesion: 0.12
+Nodes (15): 1. Migração do repositório (20/07), 2. Bug "Dados para Laudo apagam de um dia pro outro" (20/07), 3. Bug "somente 1ª imagem em todas" no laudo DOCX (21-31/07), 4. Scraper Telecontrol blindado (31/07), 5. Bug "fotos apagam ao reabrir OS" (31/07), 6. Aba "OSs Atrasadas" não renderizava (ServiceOrdersPage.js:1196), 7. Campainha tocando ao mudar de página (DashboardLayout.js:200), 8. Adesivo personalizado imprimindo torto / vários por impressão (LabelTemplatesPage.js + printingService.js) (+7 more)
+
+### Community 93 - "PublicTrackingPage.js"
+Cohesion: 0.67
+Nodes (3): GOOGLE_MAPS_LIBRARIES, haversine(), PublicTrackingPage()
 
 ### Community 106 - "avatar.jsx"
 Cohesion: 0.50
 Nodes (3): Avatar, AvatarFallback, AvatarImage
 
 ## Knowledge Gaps
-- **314 isolated node(s):** `menuItems`, `DEFAULT_CATEGORIES`, `UNITS`, `SERIAL_STATUSES`, `ENTRY_REASONS` (+309 more)
+- **318 isolated node(s):** `menuItems`, `PRESETS`, `SOURCE_OPTIONS`, `STATUS_COLORS`, `ORCAMENTO_STATUS` (+313 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **54 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **55 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `dependencies` connect `dependencies` to `devDependencies`, `RoutesPage.js`, `printingService.js`, `date-fns`, `axios`, `class-variance-authority`, `clsx`, `cmdk`, `embla-carousel-react`, `@hookform/resolvers`, `html2pdf.js`, `input-otp`, `mammoth`, `@radix-ui/react-accordion`, `@radix-ui/react-alert-dialog`, `@radix-ui/react-aspect-ratio`, `@radix-ui/react-avatar`, `@radix-ui/react-checkbox`, `@radix-ui/react-collapsible`, `@radix-ui/react-context-menu`, `@radix-ui/react-dialog`, `@radix-ui/react-dropdown-menu`, `@radix-ui/react-hover-card`, `@radix-ui/react-label`, `@radix-ui/react-menubar`, `@radix-ui/react-navigation-menu`, `@radix-ui/react-progress`, `@radix-ui/react-radio-group`, `@radix-ui/react-scroll-area`, `@radix-ui/react-select`, `@radix-ui/react-separator`, `fabric`, `@radix-ui/react-slot`, `@radix-ui/react-switch`, `lucide-react`, `@radix-ui/react-toggle-group`, `@radix-ui/react-tooltip`, `@radix-ui/react-tabs`, `@react-google-maps/api`, `@radix-ui/react-toast`, `react-resizable-panels`, `react-scripts`, `recharts`, `@supabase/supabase-js`, `tailwind-merge`, `tailwindcss-animate`, `vaul`, `zod`, `react-day-picker`, `sonner`, `next-themes`?**
-  _High betweenness centrality (0.075) - this node is a cross-community bridge._
-- **Why does `react` connect `RoutesPage.js` to `use-toast.js`, `dependencies`?**
-  _High betweenness centrality (0.048) - this node is a cross-community bridge._
-- **Why does `cn()` connect `cn` to `RoutesPage.js`, `ServiceOrdersPage.js`, `DashboardLayout.js`, `UsersPage.js`, `utils.js`, `use-toast.js`, `menubar.jsx`, `ManuaisPage.js`, `LoginPage.js`, `command.jsx`, `context-menu.jsx`, `alert-dialog.jsx`, `table.jsx`, `breadcrumb.jsx`, `drawer.jsx`, `carousel.jsx`, `navigation-menu.jsx`, `sheet.jsx`, `toggle-group.jsx`, `alert.jsx`, `avatar.jsx`?**
-  _High betweenness centrality (0.039) - this node is a cross-community bridge._
-- **What connects `menuItems`, `DEFAULT_CATEGORIES`, `UNITS` to the rest of the system?**
-  _314 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Why does `dependencies` connect `dependencies` to `devDependencies`, `form.jsx`, `date-fns`, `axios`, `class-variance-authority`, `clsx`, `cmdk`, `embla-carousel-react`, `@hookform/resolvers`, `html2pdf.js`, `input-otp`, `mammoth`, `@radix-ui/react-accordion`, `@radix-ui/react-alert-dialog`, `@radix-ui/react-aspect-ratio`, `@radix-ui/react-avatar`, `@radix-ui/react-checkbox`, `@radix-ui/react-collapsible`, `@radix-ui/react-context-menu`, `@radix-ui/react-dialog`, `@radix-ui/react-dropdown-menu`, `@radix-ui/react-hover-card`, `@radix-ui/react-label`, `@radix-ui/react-menubar`, `@radix-ui/react-progress`, `@radix-ui/react-radio-group`, `@radix-ui/react-select`, `qrcode`, `fabric`, `@radix-ui/react-slot`, `@radix-ui/react-popover`, `lucide-react`, `@radix-ui/react-toggle-group`, `@radix-ui/react-tooltip`, `@radix-ui/react-tabs`, `@react-google-maps/api`, `@radix-ui/react-toast`, `@radix-ui/react-slider`, `react-scripts`, `recharts`, `@supabase/supabase-js`, `tailwind-merge`, `tailwindcss-animate`, `vaul`, `zod`, `react-day-picker`, `sonner`, `next-themes`, `@radix-ui/react-toggle`, `react-hook-form`, `react-router-dom`?**
+  _High betweenness centrality (0.084) - this node is a cross-community bridge._
+- **Why does `react` connect `form.jsx` to `dependencies`, `RoutesPage.js`?**
+  _High betweenness centrality (0.071) - this node is a cross-community bridge._
+- **Why does `cn()` connect `cn` to `RoutesPage.js`, `ServiceOrdersPage.js`, `DashboardLayout.js`, `button.jsx`, `utils.js`, `form.jsx`, `menubar.jsx`, `label.jsx`, `LoginPage.js`, `command.jsx`, `context-menu.jsx`, `alert-dialog.jsx`, `table.jsx`, `breadcrumb.jsx`, `drawer.jsx`, `ManuaisPage.js`, `navigation-menu.jsx`, `sheet.jsx`, `toggle-group.jsx`, `alert.jsx`, `dropdown-menu.jsx`, `input-otp.jsx`, `avatar.jsx`?**
+  _High betweenness centrality (0.034) - this node is a cross-community bridge._
+- **What connects `menuItems`, `PRESETS`, `SOURCE_OPTIONS` to the rest of the system?**
+  _318 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `server.py` be split into smaller, more focused modules?**
   _Cohesion score 0.041836356904850054 - nodes in this community are weakly interconnected._
 - **Should `devDependencies` be split into smaller, more focused modules?**

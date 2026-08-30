@@ -1951,6 +1951,243 @@ async def get_signatures(os_number: str, _: dict = Depends(verify_token)):
         }
     }
 
+
+# ─── Signature link (client signs remotely via WhatsApp) ─────────────────
+# Fluxo:
+#   1. Técnico abre o SignatureModal, capta a assinatura dele + dados do cliente.
+#   2. Ao invés de pedir para o cliente assinar no aparelho do técnico, clica
+#      "Enviar link" — o backend gera um token único (7d de expiração) e
+#      guarda a assinatura do técnico + metadados dentro da collection
+#      `signature_links` (MongoDB, sidecar — não polui a tabela do Supabase).
+#   3. O frontend abre o WhatsApp Web/App do cliente com uma mensagem pronta
+#      contendo `${origin}/sign/${token}`.
+#   4. O cliente abre o link no celular, vê os dados da OS + a assinatura do
+#      técnico já capturada, e só precisa assinar. Ao submeter, o backend
+#      persiste as duas assinaturas na OS (mesmo caminho de `sign_service_order`).
+#
+# Segurança:
+#   * O token é uuid4 (128 bits de entropia) — inadivinhável.
+#   * A rota pública NÃO expõe telefone, endereço, valor ou defeito completo
+#     — só o essencial para o cliente reconhecer que é a OS dele.
+#   * Token é single-use: após submit vira `status: "used"` e novas chamadas
+#     retornam 410 Gone.
+#   * Se a OS já está assinada por outro caminho, o link é invalidado.
+
+signature_links_col = mongo_db["signature_links"]
+
+class SignatureLinkCreate(BaseModel):
+    technician_signature: str  # dataURL png
+    technician_name: str
+    client_name: Optional[str] = None
+    client_cpf: Optional[str] = None
+
+
+@api_router.post("/service-orders/{os_number}/signature-link")
+async def create_signature_link(
+    os_number: str,
+    body: SignatureLinkCreate,
+    request: Request,
+    _: dict = Depends(verify_token),
+):
+    """Gera um link público para o cliente assinar a OS pelo próprio celular."""
+    order = await db.service_orders.find_one(
+        {"os_number": os_number},
+        {"_id": 0, "os_number": 1, "customer_name": 1, "phone1": 1,
+         "product": 1, "brand": 1, "model": 1, "signature_client": 1}
+    )
+    if not order:
+        raise HTTPException(status_code=404, detail="OS não encontrada")
+    if order.get("signature_client"):
+        raise HTTPException(status_code=400, detail="OS já foi assinada pelo cliente")
+    if not body.technician_signature or not body.technician_signature.startswith("data:image"):
+        raise HTTPException(status_code=400, detail="Assinatura do técnico ausente")
+
+    token = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(days=7)
+
+    await signature_links_col.insert_one({
+        "token": token,
+        "os_number": os_number,
+        "technician_signature": body.technician_signature,
+        "technician_name": (body.technician_name or "").strip(),
+        "client_name_hint": (body.client_name or order.get("customer_name") or "").strip(),
+        "client_cpf_hint": (body.client_cpf or "").strip(),
+        "status": "pending",
+        "created_at": now.isoformat(),
+        "expires_at": expires.isoformat(),
+    })
+
+    # Base do link = origin público (front). Preferimos o Referer da chamada
+    # (mesmo domínio do painel) para funcionar em preview E produção sem
+    # depender de ENV extra. Fallback: REACT_APP_BACKEND_URL do env.
+    origin = os.environ.get("PUBLIC_APP_URL") or request.headers.get("origin") or request.headers.get("referer") or ""
+    if origin:
+        # limpa path do referer
+        try:
+            from urllib.parse import urlparse
+            u = urlparse(origin)
+            origin = f"{u.scheme}://{u.netloc}"
+        except Exception:
+            pass
+    if not origin:
+        origin = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
+
+    link_url = f"{origin}/sign/{token}"
+
+    # Mensagem pronta para WhatsApp (encodada URL-safe)
+    from urllib.parse import quote
+    cust = (order.get("customer_name") or "").split(" ")[0] or "cliente"
+    prod_desc = order.get("product") or "sua ordem de serviço"
+    msg = (
+        f"Olá {cust}! Aqui é da Mastermaq Assistência Técnica.\n\n"
+        f"Para concluir a OS #{os_number} do seu {prod_desc}, "
+        f"assine no link abaixo pelo seu próprio celular:\n\n"
+        f"{link_url}\n\n"
+        f"O link é único e expira em 7 dias. Qualquer dúvida, é só responder por aqui."
+    )
+    phone_digits = "".join(c for c in (order.get("phone1") or "") if c.isdigit())
+    if phone_digits and not phone_digits.startswith("55"):
+        phone_digits = "55" + phone_digits
+    whatsapp_url = f"https://wa.me/{phone_digits}?text={quote(msg)}" if phone_digits else f"https://wa.me/?text={quote(msg)}"
+
+    return {
+        "token": token,
+        "url": link_url,
+        "whatsapp_url": whatsapp_url,
+        "expires_at": expires.isoformat(),
+    }
+
+
+@api_router.get("/public/sign/{token}")
+async def public_signature_view(token: str):
+    """Retorna os dados mínimos que o cliente precisa para confirmar a OS
+    antes de assinar. Rota PÚBLICA (sem auth). O token protege o acesso."""
+    link = await signature_links_col.find_one({"token": token}, {"_id": 0})
+    if not link:
+        raise HTTPException(status_code=404, detail="Link inválido ou não encontrado")
+    if link.get("status") == "used":
+        raise HTTPException(status_code=410, detail="Este link já foi utilizado")
+    try:
+        exp = datetime.fromisoformat(link["expires_at"])
+        if datetime.now(timezone.utc) > exp:
+            raise HTTPException(status_code=410, detail="Este link expirou")
+    except (KeyError, ValueError):
+        pass
+
+    order = await db.service_orders.find_one(
+        {"os_number": link["os_number"]},
+        {"_id": 0, "os_number": 1, "customer_name": 1, "product": 1,
+         "brand": 1, "model": 1, "service_type": 1, "reported_defect": 1,
+         "technical_diagnosis": 1, "status": 1, "registration_date": 1,
+         "signature_client": 1}
+    )
+    if not order:
+        raise HTTPException(status_code=404, detail="OS não encontrada")
+    if order.get("signature_client"):
+        # OS já assinada por outro caminho — invalida o link
+        await signature_links_col.update_one({"token": token}, {"$set": {"status": "used"}})
+        raise HTTPException(status_code=410, detail="Esta OS já foi assinada")
+
+    return {
+        "os_number": order.get("os_number"),
+        "customer_name": order.get("customer_name"),
+        "product": order.get("product"),
+        "brand": order.get("brand"),
+        "model": order.get("model"),
+        "service_type": order.get("service_type"),
+        "reported_defect": order.get("reported_defect"),
+        "technical_diagnosis": order.get("technical_diagnosis"),
+        "status": order.get("status"),
+        "registration_date": order.get("registration_date"),
+        "technician_name": link.get("technician_name"),
+        "client_name_hint": link.get("client_name_hint"),
+        "expires_at": link.get("expires_at"),
+    }
+
+
+class PublicSignSubmit(BaseModel):
+    signature_client: str
+    client_cpf: Optional[str] = None
+
+
+@api_router.post("/public/sign/{token}/submit")
+async def public_signature_submit(token: str, body: PublicSignSubmit, background_tasks: BackgroundTasks):
+    """Persist client signature via the public link. Reuses the same PDF/
+    Assinafy pipeline as `sign_service_order` para manter o dossiê consistente."""
+    from assinafy_service import generate_os_pdf, upload_document_to_assinafy, create_signer, create_assignment
+
+    link = await signature_links_col.find_one({"token": token}, {"_id": 0})
+    if not link:
+        raise HTTPException(status_code=404, detail="Link inválido")
+    if link.get("status") == "used":
+        raise HTTPException(status_code=410, detail="Link já utilizado")
+    try:
+        exp = datetime.fromisoformat(link["expires_at"])
+        if datetime.now(timezone.utc) > exp:
+            raise HTTPException(status_code=410, detail="Link expirado")
+    except (KeyError, ValueError):
+        pass
+
+    if not body.signature_client or not body.signature_client.startswith("data:image"):
+        raise HTTPException(status_code=400, detail="Assinatura do cliente inválida")
+
+    os_number = link["os_number"]
+    order = await db.service_orders.find_one({"os_number": os_number}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="OS não encontrada")
+    if order.get("signature_client"):
+        await signature_links_col.update_one({"token": token}, {"$set": {"status": "used"}})
+        raise HTTPException(status_code=410, detail="OS já assinada")
+
+    now = datetime.now(timezone.utc).isoformat()
+    update_data = {
+        "signature_technician": link["technician_signature"],
+        "signature_client": body.signature_client,
+        "signature_client_name": link.get("client_name_hint") or order.get("customer_name") or "",
+        "signature_client_cpf": (body.client_cpf or link.get("client_cpf_hint") or "").strip(),
+        "signature_tech_name": link.get("technician_name") or "",
+        "signature_date": now,
+        "updated_at": now,
+    }
+
+    old_status = order.get("status")
+    notification = Notification(
+        message=f"OS {os_number} assinada pelo cliente via link (status mantido: '{old_status}')",
+        os_number=os_number,
+        old_status=old_status,
+        new_status=old_status,
+    )
+    await db.notifications.insert_one(notification.model_dump())
+
+    async def assinafy_background(os_num, order_data, sig_tech, sig_client):
+        try:
+            pdf_bytes = generate_os_pdf(order_data, sig_tech, sig_client)
+            doc = await upload_document_to_assinafy(pdf_bytes, f"OS_{os_num}.pdf")
+            doc_id = doc.get("id")
+            tech_name = order_data.get("technician") or "Tecnico"
+            client_name = order_data.get("customer_name") or "Cliente"
+            tech_signer = await create_signer(tech_name)
+            client_signer = await create_signer(client_name)
+            await create_assignment(doc_id, [tech_signer["id"], client_signer["id"]])
+            await db.service_orders.update_one(
+                {"os_number": os_num},
+                {"$set": {"assinafy_document_id": doc_id, "assinafy_status": "uploaded"}}
+            )
+            logger.info(f"Assinafy (public sign) complete for OS {os_num}, doc_id={doc_id}")
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Assinafy (public sign) failed for OS {os_num}: {e}")
+            await db.service_orders.update_one(
+                {"os_number": os_num},
+                {"$set": {"assinafy_status": f"error: {str(e)[:200]}"}}
+            )
+
+    background_tasks.add_task(assinafy_background, os_number, order, link["technician_signature"], body.signature_client)
+    await db.service_orders.update_one({"os_number": os_number}, {"$set": update_data})
+    await signature_links_col.update_one({"token": token}, {"$set": {"status": "used", "used_at": now}})
+
+    return {"success": True, "os_number": os_number}
+
 @api_router.get("/service-orders/{os_number}")
 async def get_service_order(os_number: str, include_photos: bool = False, payload: dict = Depends(verify_token)):
     """OS detail. By default photos are EXCLUDED to drastically reduce egress

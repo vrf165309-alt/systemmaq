@@ -16,6 +16,7 @@ import OSQrRedirectPage from './pages/OSQrRedirectPage';
 import OSPublicViewPage from './pages/OSPublicViewPage';
 import ProductPublicViewPage from './pages/ProductPublicViewPage';
 import LabelTemplatesPage from './pages/LabelTemplatesPage';
+import PublicSignPage from './pages/PublicSignPage';
 import './App.css';
 
 const ProtectedRoute = ({ children, adminOnly = false, allowedRoles = null }) => {
@@ -93,6 +94,7 @@ function AppRoutes() {
         } 
       />
       <Route path="/track/:token" element={<PublicTrackingPage />} />
+      <Route path="/sign/:token" element={<PublicSignPage />} />
       <Route path="/os/:osNumber" element={<OSQrRedirectPage />} />
       {/* Short QR route — encoded as alphanumeric in thermal-label QR codes
           so the QR is Version 2 (25×25) instead of Version 3 (29×29).
