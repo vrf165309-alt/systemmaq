@@ -215,6 +215,13 @@ const ServiceOrdersPage = () => {
   const [showGarantiaPopup, setShowGarantiaPopup] = useState(false);
   const [showOrcamentoPopup, setShowOrcamentoPopup] = useState(false);
   const [showOrcamentoConclusaoPopup, setShowOrcamentoConclusaoPopup] = useState(false);
+    // Guia "OSs Atrasadas"
+  const [overdueOrders, setOverdueOrders] = useState([]);
+  const [overdueCount, setOverdueCount] = useState(0);
+  const [overdueLoading, setOverdueLoading] = useState(false);
+  const [overdueSearch, setOverdueSearch] = useState('');
+  const [overdueStatusFilter, setOverdueStatusFilter] = useState('all');
+
   
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -330,7 +337,7 @@ const ServiceOrdersPage = () => {
       setAvailableStatuses((response.data.statuses || []).filter(s => s !== 'Orçamento' && s.toUpperCase() !== 'AGUARDANDO ANÁLISE'));
     } catch (error) {
       console.error('Error fetching statuses:', error);
-    }
+    } 
   }, [getAuthHeader]);
 
   // Track latest fetch ID to prevent stale results
@@ -382,10 +389,29 @@ const fetchOrders = useCallback(async () => {
     }
   }, [getAuthHeader]);
 
+  // O backend já devolve só os 3 status em aberto com mais de 10 dias.
+  // Ao mudar o status (ex.: Finalizada) a OS some daqui automaticamente
+  // e continua aparecendo apenas no "Histórico de OSs".
+  const fetchOverdue = useCallback(async () => {
+    setOverdueLoading(true);
+    try {
+      const response = await axios.get(`${API}/service-orders/overdue-at`, getAuthHeader());
+      setOverdueOrders(response.data.orders || []);
+      setOverdueCount(response.data.count || 0);
+    } catch (error) {
+      console.error('Error fetching overdue orders:', error);
+      setOverdueOrders([]);
+      setOverdueCount(0);
+    } finally {
+      setOverdueLoading(false);
+    }
+  }, [getAuthHeader]);
+
   useEffect(() => {
     fetchStatuses();
     fetchOrders();
     fetchUnreadCount();
+    fetchOverdue();
   }, [fetchOrders, fetchUnreadCount]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-fetch when tab becomes visible (mobile back-to-foreground) so users
@@ -434,7 +460,10 @@ const fetchOrders = useCallback(async () => {
     if (activeTab === 'create' && !formData.os_number) {
       fetchNextOseNumber();
     }
-  }, [activeTab]);
+    if (activeTab === 'overdue') {
+      fetchOverdue();
+    }
+  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCEPLookup = async (cep) => {
     if (cep.length < 8) return;
@@ -577,6 +606,7 @@ const fetchOrders = useCallback(async () => {
       await axios.put(`${API}/service-orders/${selectedOrder.os_number}`, updatedData, getAuthHeader());
       toast.success('OS atualizada com sucesso!');
       fetchOrders();
+      fetchOverdue();
       fetchUnreadCount();
       setModalOpen(false);
     } catch (error) {
@@ -672,12 +702,21 @@ const fetchOrders = useCallback(async () => {
               <TabsTrigger value="history" data-testid="tab-history">
                 Histórico de OSs {totalItems > 0 && <span className="ml-1.5 bg-blue-100 text-blue-700 text-xs px-1.5 py-0.5 rounded-full font-medium">{totalItems}</span>}
               </TabsTrigger>
+              <TabsTrigger value="overdue" data-testid="tab-overdue">
+                <AlertTriangle size={16} className="mr-1 text-red-600" />
+                OSs Atrasadas
+                {overdueCount > 0 && (
+                  <span className="ml-1.5 bg-red-100 text-red-700 text-xs px-1.5 py-0.5 rounded-full font-medium">
+                    {overdueCount}
+                  </span>
+                )}
+              </TabsTrigger>
               <TabsTrigger value="create" data-testid="tab-create">
                 <Plus size={16} className="mr-1" />
                 Cadastrar OS
               </TabsTrigger>
             </TabsList>
-
+            
             {activeTab === 'history' && (
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="flex items-center gap-2 flex-wrap" data-testid="sync-area">
@@ -1149,10 +1188,12 @@ const fetchOrders = useCallback(async () => {
                   >
                     <ChevronsRight size={14} />
                   </Button>
-                </div>
+                                </div>
               </div>
             )}
           </TabsContent>
+
+          {/* ↓↓↓ COLE AQUI o bloco <TabsContent value="overdue"> ... </TabsContent> ↓↓↓ */}
 
           <TabsContent value="create" className="mt-0">
             <Card className="border-gray-200">
@@ -1651,10 +1692,10 @@ const fetchOrders = useCallback(async () => {
           </DialogContent>
         </Dialog>
 
-        {/* Order Detail Modal */}
+                {/* Order Detail Modal */}
         <OrderDetailModal
           open={modalOpen}
-          onClose={() => setModalOpen(false)}
+          onClose={() => { setModalOpen(false); fetchOverdue(); }}
           order={selectedOrder}
           onUpdate={handleUpdateOrder}
           onWhatsApp={openWhatsApp}

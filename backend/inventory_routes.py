@@ -11,19 +11,29 @@ from datetime import datetime, timezone
 import jwt
 import io
 import csv
+import os
 import uuid
+import logging
+import httpx
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 
 db = None
+mongo_db = None   # Native Mongo client (separate from the Supabase adapter).
+                  # Used only for the `product_metadata` sidecar until the
+                  # products table gains `image_url` + `product_type` columns
+                  # via /app/backend/migrations/products_add_image_and_type.sql.
 _jwt_secret = None
 _jwt_algorithm = "HS256"
 _security = HTTPBearer()
 
-def init(database, jwt_secret):
-    global db, _jwt_secret
+def init(database, jwt_secret, mongo=None):
+    global db, _jwt_secret, mongo_db
     db = database
     _jwt_secret = jwt_secret
+    mongo_db = mongo
 
 def _auth(credentials: HTTPAuthorizationCredentials = Depends(_security)):
     try:
@@ -55,6 +65,12 @@ class ProductCreate(BaseModel):
     current_stock: Optional[int] = 0
     serial_number: Optional[str] = ""
     batch: Optional[str] = ""
+    # New: product_type is the user-facing category label (Geladeira, Coifa,
+    # Máquina de Lavar, etc.). image_url is the public Supabase Storage URL
+    # for the product's photo — used in the inventory modal preview and QR
+    # labels.
+    product_type: Optional[str] = ""
+    image_url: Optional[str] = ""
 
 class ProductUpdate(BaseModel):
     name: Optional[str] = None
@@ -70,6 +86,8 @@ class ProductUpdate(BaseModel):
     location: Optional[str] = None
     serial_number: Optional[str] = None
     batch: Optional[str] = None
+    product_type: Optional[str] = None
+    image_url: Optional[str] = None
 
 class SerialCreate(BaseModel):
     product_code: str
@@ -129,15 +147,121 @@ async def list_products(
         query["category"] = category
     
     products = await db.products.find(query, {"_id": 0}).sort("name", 1).to_list(500)
-    
+
+    # Merge product_metadata (image_url, product_type) from Mongo. Bulk-fetch
+    # once instead of N+1 to keep the list endpoint snappy. When the SQL
+    # migration is applied and these become native columns, this block can
+    # be removed with no client change.
+    codes = [p.get("code") for p in products if p.get("code")]
+    if codes and mongo_db is not None:
+        meta_docs = await mongo_db.product_metadata.find(
+            {"code": {"$in": codes}}, {"_id": 0}
+        ).to_list(len(codes))
+        meta_by_code = {m["code"]: m for m in meta_docs if "code" in m}
+        for p in products:
+            m = meta_by_code.get(p.get("code"))
+            if m:
+                if "image_url" in m: p["image_url"] = m["image_url"]
+                if "product_type" in m: p["product_type"] = m["product_type"]
+
     if stock_status == "low":
         products = [p for p in products if 0 < p.get("current_stock", 0) <= p.get("min_stock", 0)]
     elif stock_status == "out":
         products = [p for p in products if p.get("current_stock", 0) == 0]
     elif stock_status == "ok":
         products = [p for p in products if p.get("current_stock", 0) > p.get("min_stock", 0)]
-    
+
     return products
+
+# ==================== IMAGE UPLOAD ====================
+# Product image upload → Supabase Storage bucket `product-images`.
+# Returns the public URL to store in `products.image_url`.
+#
+# Storage bucket setup (one-time, in Supabase Dashboard):
+#   - Create bucket `product-images` as PUBLIC
+#   - Set policy: anyone can read, service_role can write
+# Alternatively the endpoint will attempt to create the bucket on first
+# upload (best-effort — silently ignores 409 if it already exists).
+
+_BUCKET = "product-images"
+_BUCKET_ENSURED = False
+
+async def _ensure_bucket(client: httpx.AsyncClient, supa_url: str, headers: dict):
+    """Idempotent: create the bucket if it doesn't exist. Best-effort.
+
+    We do this lazily on first upload rather than at boot so the module still
+    imports cleanly if SUPABASE_SERVICE_KEY is missing during local dev.
+    """
+    global _BUCKET_ENSURED
+    if _BUCKET_ENSURED:
+        return
+    try:
+        r = await client.post(
+            f"{supa_url}/storage/v1/bucket",
+            headers=headers,
+            json={"id": _BUCKET, "name": _BUCKET, "public": True},
+            timeout=15,
+        )
+        if r.status_code in (200, 201, 409):
+            _BUCKET_ENSURED = True
+            logger.info(f"product-images bucket ready (status={r.status_code})")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"could not verify/create product-images bucket: {e}")
+
+
+@router.post("/upload-image")
+async def upload_product_image(file: UploadFile = File(...), _: dict = Depends(_auth)):
+    """Upload a product image to Supabase Storage and return its public URL.
+
+    Frontend calls this from ProductFormModal after the user selects/pastes/
+    drops an image. Compression is done client-side; here we just validate
+    the mime type and forward to Storage.
+    """
+    supa_url = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
+    service_key = os.environ.get("SUPABASE_SERVICE_KEY")
+    if not supa_url or not service_key:
+        raise HTTPException(status_code=500, detail="Supabase Storage not configured")
+
+    content_type = file.content_type or "image/jpeg"
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Arquivo deve ser uma imagem")
+
+    ext = content_type.split("/")[-1].split(";")[0].strip().lower()
+    if ext not in {"jpeg", "jpg", "png", "webp", "gif"}:
+        ext = "jpeg"
+    filename = f"{uuid.uuid4().hex}.{ext}"
+
+    data = await file.read()
+    if len(data) == 0:
+        raise HTTPException(status_code=400, detail="Arquivo vazio")
+    if len(data) > 8 * 1024 * 1024:  # 8 MB hard cap
+        raise HTTPException(status_code=400, detail="Imagem maior que 8MB")
+
+    headers = {
+        "apikey": service_key,
+        "Authorization": f"Bearer {service_key}",
+    }
+    async with httpx.AsyncClient() as client:
+        await _ensure_bucket(client, supa_url, headers)
+        upload_headers = {
+            **headers,
+            "Content-Type": content_type,
+            "x-upsert": "true",
+        }
+        r = await client.post(
+            f"{supa_url}/storage/v1/object/{_BUCKET}/{filename}",
+            headers=upload_headers,
+            content=data,
+            timeout=60,
+        )
+        if r.status_code not in (200, 201):
+            logger.error(f"Storage upload failed: {r.status_code} {r.text[:200]}")
+            raise HTTPException(status_code=500, detail=f"Storage error: {r.text[:120]}")
+
+    public_url = f"{supa_url}/storage/v1/object/public/{_BUCKET}/{filename}"
+    return {"url": public_url, "filename": filename}
+
+
 
 @router.post("/products")
 async def create_product(product: ProductCreate, _: dict = Depends(_auth)):
@@ -153,12 +277,34 @@ async def create_product(product: ProductCreate, _: dict = Depends(_auth)):
         existing = await db.products.find_one({"code": code})
         if existing:
             raise HTTPException(status_code=400, detail="Código já existe")
-    
+
+    # Split off fields that don't exist as columns in the Supabase `products`
+    # table yet. These live in a separate Mongo collection (`product_metadata`)
+    # keyed by code. When someone runs the SQL migration in the Supabase
+    # dashboard (see /app/backend/migrations/products_add_image_and_type.sql)
+    # to add these columns natively, we can drop the split — the Mongo copy
+    # will keep working as fallback until it does.
+    metadata = {}
+    for meta_key in ("image_url", "product_type"):
+        if meta_key in doc:
+            val = doc.pop(meta_key)
+            if val:
+                metadata[meta_key] = val
+
     now = datetime.now(timezone.utc).isoformat()
     doc["created_at"] = now
     doc["updated_at"] = now
     await db.products.insert_one(doc)
     doc.pop("_id", None)
+
+    if metadata:
+        metadata["code"] = code
+        metadata["updated_at"] = now
+        if mongo_db is not None:
+            await mongo_db.product_metadata.update_one(
+                {"code": code}, {"$set": metadata}, upsert=True
+            )
+        doc.update({k: v for k, v in metadata.items() if k in ("image_url", "product_type")})
     return doc
 
 @router.put("/products/{code}")
@@ -166,13 +312,38 @@ async def update_product(code: str, update: ProductUpdate, _: dict = Depends(_au
     update_dict = {k: v for k, v in update.dict().items() if v is not None}
     if not update_dict:
         raise HTTPException(status_code=400, detail="Nenhum campo para atualizar")
-    
-    update_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
-    result = await db.products.update_one({"code": code}, {"$set": update_dict})
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Produto não encontrado")
-    
+
+    # Split out fields stored in Mongo (see create_product for context).
+    metadata_update = {}
+    for meta_key in ("image_url", "product_type"):
+        if meta_key in update_dict:
+            metadata_update[meta_key] = update_dict.pop(meta_key)
+
+    now = datetime.now(timezone.utc).isoformat()
+    if update_dict:
+        update_dict["updated_at"] = now
+        result = await db.products.update_one({"code": code}, {"$set": update_dict})
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Produto não encontrado")
+
+    if metadata_update:
+        metadata_update["code"] = code
+        metadata_update["updated_at"] = now
+        if mongo_db is not None:
+            await mongo_db.product_metadata.update_one(
+                {"code": code}, {"$set": metadata_update}, upsert=True
+            )
+
     product = await db.products.find_one({"code": code}, {"_id": 0})
+    if product is None:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+    # Merge metadata back into the response
+    if mongo_db is not None:
+        meta = await mongo_db.product_metadata.find_one({"code": code}, {"_id": 0})
+        if meta:
+            for k in ("image_url", "product_type"):
+                if k in meta:
+                    product[k] = meta[k]
     return product
 
 @router.delete("/products/{code}")
@@ -180,6 +351,9 @@ async def delete_product(code: str, _: dict = Depends(_auth)):
     result = await db.products.delete_one({"code": code})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Produto não encontrado")
+    # Also clean up the metadata sidecar so orphan image URLs don't linger.
+    if mongo_db is not None:
+        await mongo_db.product_metadata.delete_one({"code": code})
     return {"message": "Produto removido"}
 
 

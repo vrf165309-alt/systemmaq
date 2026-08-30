@@ -96,7 +96,7 @@ class TelecontrolScraper:
             )
             logger.info(f"[{self.source_label}] Browser started successfully")
         except Exception as e:
-            logger.error(f"[{self.source_label}] Failed to start browser: {str(e)}")
+            logger.exception(f"[{self.source_label}] Failed to start browser: {str(e)}")
             raise
         
     async def close_browser(self):
@@ -121,189 +121,260 @@ class TelecontrolScraper:
             self.playwright = None
             self.logged_in = False
     
-    async def login(self, page: Page) -> bool:
-        """Login to Telecontrol"""
+    async def _dump_debug(self, page: Page, tag: str):
+        """Salva screenshot + HTML para diagnostico rapido de quebras de login."""
         try:
-            logger.info(f"Navigating to Telecontrol login page...")
-            await page.goto(f"{TELECONTROL_BASE_URL}/assist/index.php", wait_until='domcontentloaded', timeout=60000)
-            await page.wait_for_timeout(3000)
-            
-            # Check if already logged in (redirected to main page)
-            current_url = page.url
-            logger.info(f"Current URL: {current_url}")
-            
-            if "consulta_lite_new.php" in current_url or "menu_inicial" in current_url:
-                self.logged_in = True
-                logger.info("Already logged in")
-                return True
-            
-            # Wait for page to be ready
-            await page.wait_for_load_state('networkidle', timeout=30000)
-            
-            # Try different selectors for login form
+            debug_dir = "/tmp/scraper_debug"
+            os.makedirs(debug_dir, exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            base = f"{debug_dir}/{tag}_{self.source_label}_{ts}"
+            await page.screenshot(path=f"{base}.png", full_page=True)
+            with open(f"{base}.html", "w", encoding="utf-8") as f:
+                f.write(await page.content())
+            logger.error(f"[{self.source_label}] Debug salvo em {base}.png / .html")
+        except Exception as dbg:
+            logger.warning(f"[{self.source_label}] Falha ao salvar debug: {dbg}")
+
+    async def _is_session_valid(self, page: Page) -> bool:
+        """Sinal concreto de sessao: a pagina de consulta abre e mostra o formulario."""
+        try:
+            await page.goto(
+                f"{TELECONTROL_BASE_URL}/assist/consulta_lite_new.php",
+                wait_until="domcontentloaded",
+                timeout=60000,
+            )
+            await page.wait_for_timeout(1500)
+            url_l = page.url.lower()
+            if "login_posvenda" in url_l or "login.php" in url_l:
+                return False
+            # Se o form de login voltou a aparecer, a sessao nao existe
+            if await page.locator("form#acessar, input#senha").count() > 0:
+                return False
+            has_search = await page.locator(
+                '#formulario_pesquisa, #tabelas, #data_inicial, input[name="data_inicial"]'
+            ).count()
+            return has_search > 0
+        except Exception as e:
+            logger.debug(f"[{self.source_label}] _is_session_valid falhou: {e}")
+            return False
+
+    async def login(self, page: Page) -> bool:
+        """Login no Telecontrol (login_posvenda_new.php).
+
+        Correcoes 20/08/2026:
+        - a mensagem de erro do site agora e #errologin (e #sucessologin no sucesso);
+          o antigo #msgErro nao existe mais;
+        - o submit via JS so conta como enviado se login() realmente for funcao
+          global (antes marcava submitted=True sempre e nunca clicava em #btnAcao);
+        - sucesso passa a ser validado por sessao real (consulta_lite_new.php abre
+          sem formulario de login), nao por substring de URL;
+        - vai direto para a pagina de login, sem depender do redirect de index.php;
+        - trata a tela intermediaria #mult_cliente_admin;
+        - grava screenshot + HTML em /tmp/scraper_debug quando falha.
+        """
+        self.last_login_error = None
+        try:
+            login_url = f"{TELECONTROL_BASE_URL}/assist/externos/login_posvenda_new.php"
+            logger.info(f"[{self.source_label}] Abrindo pagina de login: {login_url}")
+            await page.goto(login_url, wait_until="domcontentloaded", timeout=60000)
+            await page.wait_for_timeout(2000)
+            try:
+                await page.wait_for_load_state("networkidle", timeout=20000)
+            except Exception:
+                pass
+
+            # Sessao anterior ainda viva? (cookie valido -> redireciona / sem form)
+            if await page.locator("input#senha, input[name='senha']").count() == 0:
+                if await self._is_session_valid(page):
+                    self.logged_in = True
+                    logger.info(f"[{self.source_label}] Ja estava logado")
+                    return True
+                # sem campo de senha e sem sessao: pagina inesperada
+                await self._dump_debug(page, "login_sem_form")
+                self.last_login_error = f"Pagina de login inesperada (url={page.url})"
+                logger.error(f"[{self.source_label}] {self.last_login_error}")
+                return False
+
             login_selectors = [
+                'input#login',
                 'input[name="login"]',
                 'input[name="usuario"]',
                 'input[name="user"]',
                 '#usuario',
-                '#login'
             ]
-            
             password_selectors = [
+                'input#senha',
                 'input[name="senha"]',
                 'input[name="password"]',
                 'input[type="password"]',
-                '#senha',
-                '#password'
             ]
-            
             submit_selectors = [
+                'button#btnAcao',
+                'form#acessar button[type="submit"]',
                 'button[type="submit"]',
                 'input[type="submit"]',
                 'button:has-text("Entrar")',
-                'button:has-text("Login")',
+                'button:has-text("Acessar")',
             ]
-            
-            # Try to find and fill login field
-            login_filled = False
-            for selector in login_selectors:
-                try:
-                    if await page.locator(selector).count() > 0:
-                        await page.fill(selector, self.login_user, timeout=5000)
-                        login_filled = True
-                        logger.info(f"Filled login using selector: {selector}")
-                        break
-                except Exception:
-                    continue
-            
-            if not login_filled:
-                logger.error("Could not find login field")
+
+            async def _fill_first(selectors, value, field):
+                for sel in selectors:
+                    try:
+                        loc = page.locator(sel).first
+                        if await loc.count() > 0:
+                            await loc.fill("", timeout=5000)
+                            await loc.fill(value, timeout=5000)
+                            logger.info(f"[{self.source_label}] {field} preenchido via '{sel}'")
+                            return True
+                    except Exception:
+                        continue
                 return False
-            
-            # Try to find and fill password field
-            password_filled = False
-            for selector in password_selectors:
-                try:
-                    if await page.locator(selector).count() > 0:
-                        await page.fill(selector, self.login_pass, timeout=5000)
-                        password_filled = True
-                        logger.info(f"Filled password using selector: {selector}")
-                        break
-                except Exception:
-                    continue
-            
-            if not password_filled:
-                logger.error("Could not find password field")
+
+            if not await _fill_first(login_selectors, self.login_user, "login"):
+                await self._dump_debug(page, "login_campo_usuario")
+                self.last_login_error = "Campo de login nao encontrado na pagina"
+                logger.error(f"[{self.source_label}] {self.last_login_error}")
                 return False
-            
-            # Try to click submit button. Telecontrol's form uses
-            # `action="javascript: login();"` — so the actual submit is the
-            # JS `login()` function. We try to invoke it directly first;
-            # falling back to a real click / Enter press if that doesn't
-            # work (which handles older / different login pages).
+
+            if not await _fill_first(password_selectors, self.login_pass, "senha"):
+                await self._dump_debug(page, "login_campo_senha")
+                self.last_login_error = "Campo de senha nao encontrado na pagina"
+                logger.error(f"[{self.source_label}] {self.last_login_error}")
+                return False
+
+            # Submit. O form usa action="javascript: login();".
+            # ATENCAO: page.evaluate NAO lanca excecao quando login() nao existe —
+            # a expressao apenas retorna False. Por isso conferimos o retorno.
             submitted = False
             try:
-                await page.evaluate('typeof login === "function" && login()')
-                submitted = True
-                logger.info("Invoked Telecontrol login() JS function")
+                invoked = await page.evaluate(
+                    '(() => { if (typeof login === "function") { login(); return true; } return false; })()'
+                )
+                if invoked:
+                    submitted = True
+                    logger.info(f"[{self.source_label}] login() JS invocado")
+                else:
+                    logger.info(f"[{self.source_label}] login() nao e funcao global — usando clique")
             except Exception as e:
-                logger.debug(f"Could not invoke login() JS: {e}")
+                logger.debug(f"[{self.source_label}] evaluate login() falhou: {e}")
+
             if not submitted:
-                for selector in submit_selectors:
+                for sel in submit_selectors:
                     try:
-                        if await page.locator(selector).count() > 0:
-                            await page.click(selector, timeout=5000)
+                        loc = page.locator(sel).first
+                        if await loc.count() > 0 and await loc.is_visible():
+                            await loc.click(timeout=5000)
                             submitted = True
-                            logger.info(f"Clicked submit using selector: {selector}")
+                            logger.info(f"[{self.source_label}] Submit clicado via '{sel}'")
                             break
                     except Exception:
                         continue
-            if not submitted:
-                await page.keyboard.press('Enter')
-                logger.info("Pressed Enter to submit")
 
-            # Give the JS `login()` AJAX call a bit of time to populate the
-            # #msgErro element OR to redirect. We first wait a short beat
-            # for the AJAX submit, THEN wait for either a URL change (means
-            # login worked) or an error message to appear (means it didn't).
-            await page.wait_for_timeout(3000)
+            if not submitted:
+                try:
+                    await page.locator(password_selectors[0]).first.press("Enter")
+                    logger.info(f"[{self.source_label}] Enter pressionado no campo senha")
+                except Exception:
+                    await page.keyboard.press("Enter")
+
+            # Espera o retorno do AJAX: erro (#errologin), sucesso (#sucessologin),
+            # troca de URL ou sumico do formulario.
+            await page.wait_for_timeout(2000)
             try:
                 await page.wait_for_function(
                     """() => {
-                        const url = window.location.href;
-                        const msg = document.getElementById('msgErro');
-                        return !url.includes('login_posvenda_new')
-                            || (msg && msg.innerText && msg.innerText.trim().length > 0);
+                        const txt = (el) => (el && el.innerText ? el.innerText.trim() : '');
+                        const err = txt(document.getElementById('errologin'));
+                        const ok  = txt(document.getElementById('sucessologin'));
+                        const mult = document.getElementById('mult_cliente_admin');
+                        const multVisible = !!mult && mult.offsetParent !== null;
+                        const noForm = !document.getElementById('acessar');
+                        const moved = !window.location.href.includes('login_posvenda');
+                        return err.length > 0 || ok.length > 0 || multVisible || noForm || moved;
                     }""",
-                    timeout=8000,
+                    timeout=15000,
                 )
             except Exception:
-                # No signal either way — fall through to the URL check below
-                pass
+                logger.debug(f"[{self.source_label}] Nenhum sinal de retorno do login em 15s")
+
             try:
-                await page.wait_for_load_state('networkidle', timeout=15000)
+                await page.wait_for_load_state("networkidle", timeout=15000)
             except Exception:
                 pass
 
-            # Check if login was successful.
-            #
-            # OLD (buggy): declared success as long as "erro" wasn't in the
-            # URL. That let redirects back to `login_posvenda_new.php` count
-            # as "logged in", so fetch_orders_list would then try to fill
-            # date fields on the login page and blow up cryptically. Root
-            # cause of the 28/07 silent-truncation incident together with
-            # the pagination bug.
-            #
-            # NEW: require the URL to look like a logged-in page AND make
-            # sure it doesn't still say "login" somewhere. Also grab the
-            # exact `#msgErro` text from the page when we fail — this ends
-            # up surfaced in the health badge so the operator sees
-            # "Login ou senha inválidos" instead of a generic error.
-            current_url = page.url
-            url_l = current_url.lower()
-            logged_in_hint = (
-                "consulta_lite_new.php" in url_l
-                or "menu_inicial" in url_l
-                or "assist/main" in url_l
-            )
-            still_on_login = "login" in url_l or url_l.endswith("index.php")
-            if logged_in_hint and not still_on_login:
+            # Erro explicito do site tem prioridade
+            site_err = ""
+            try:
+                site_err = (await page.evaluate(
+                    """() => {
+                        const el = document.getElementById('errologin');
+                        if (!el) return '';
+                        if (el.offsetParent === null && !el.innerText.trim()) return '';
+                        return el.innerText.trim();
+                    }"""
+                ) or "").strip()
+            except Exception:
+                pass
+
+            if site_err:
+                self.last_login_error = site_err
+                logger.error(
+                    f"[{self.source_label}] Login rejeitado pelo site: {site_err!r} "
+                    f"(url={page.url}, user={self.login_user!r})"
+                )
+                await self._dump_debug(page, "login_erro_site")
+                return False
+
+            # Tela intermediaria de selecao de cliente (perfis admin)
+            try:
+                mult = page.locator("#mult_cliente_admin")
+                if await mult.count() > 0 and await mult.first.is_visible():
+                    logger.info(f"[{self.source_label}] Tela de selecao de cliente detectada")
+                    select = mult.locator("select").first
+                    if await select.count() > 0:
+                        values = await select.locator("option").evaluate_all(
+                            "opts => opts.map(o => o.value).filter(v => v && v !== '0')"
+                        )
+                        if values:
+                            await select.select_option(value=values[0])
+                            logger.info(f"[{self.source_label}] Cliente selecionado: {values[0]}")
+                    btn = mult.locator("button, input[type=submit]").first
+                    if await btn.count() > 0:
+                        await btn.click(timeout=5000)
+                    await page.wait_for_timeout(3000)
+                    try:
+                        await page.wait_for_load_state("networkidle", timeout=15000)
+                    except Exception:
+                        pass
+            except Exception as e:
+                logger.debug(f"[{self.source_label}] Selecao de cliente ignorada: {e}")
+
+            # Validacao real de sessao
+            if await self._is_session_valid(page):
                 self.logged_in = True
-                logger.info(f"Login successful, current URL: {current_url}")
+                logger.info(f"[{self.source_label}] Login OK (sessao validada) url={page.url}")
                 return True
 
-            # Failed. Capture the exact error message the site is showing.
-            site_msg = ""
-            try:
-                site_msg = await page.evaluate(
-                    'document.getElementById("msgErro")?.innerText || ""'
-                )
-                site_msg = (site_msg or "").strip()
-            except Exception:
-                pass
             try:
                 title = await page.title()
             except Exception:
                 title = "?"
-            # Telecontrol's server-side response after a failed submit
-            # redirects to /assist/login.php? — that's a strong signal the
-            # credentials were rejected (as opposed to network problems,
-            # which would time out before this point).
-            if not site_msg and current_url.rstrip("/?").endswith("login.php"):
-                site_msg = "Login ou senha inválidos (Telecontrol rejeitou as credenciais)"
-            reason = site_msg or f"login page reached (title={title!r}) — session not established"
-            logger.error(
-                f"Login failed — url={current_url} reason={reason!r} "
-                f"user={self.login_user!r}"
+            self.last_login_error = (
+                f"Sessao nao estabelecida apos submit (url={page.url}, title={title!r})"
             )
-            # Store on instance so sync_orders can surface a clean message
-            # instead of the whole stacktrace-y string.
-            self.last_login_error = reason
+            logger.error(f"[{self.source_label}] {self.last_login_error}")
+            await self._dump_debug(page, "login_sem_sessao")
             return False
-                
+
         except Exception as e:
-            logger.error(f"Login error: {e}")
+            self.last_login_error = f"Erro inesperado no login: {type(e).__name__}: {e}"
+            logger.exception(f"[{self.source_label}] {self.last_login_error}")
+            try:
+                await self._dump_debug(page, "login_excecao")
+            except Exception:
+                pass
             return False
+
     
     async def fetch_orders_list(self, page: Page, start_date: str, end_date: str) -> List[Dict]:
         """Fetch list of orders from consulta_lite_new.php with pagination support.
@@ -625,7 +696,7 @@ class TelecontrolScraper:
                         // so the backend can log which colors we're missing.
                         const rawBoxColor = statusBox ? (
                             statusBox.style.backgroundColor ||
-                            (statusBox.getAttribute('style') || '').match(/background-color:\s*([^;]+)/i)?.[1] ||
+                            (statusBox.getAttribute('style') || '').match(/background-color:\\s*([^;]+)/i)?.[1] ||
                             window.getComputedStyle(statusBox).backgroundColor || ''
                         ) : '';
                         
@@ -788,22 +859,83 @@ class TelecontrolScraper:
             
             city = await get_field_value("Cidade")
             order_data["city"] = city if city else "não capturado"
-            
+
+            # Serial number & opening date from detail page.
+            #
+            # HQ FIX (31/07/2026): HQ list page delivers wrong values for
+            # these fields (product description in cells[2] and serial in
+            # cells[3]), so we rely on labeled fields here. The list-page
+            # values were dropped from order_summary for HQ in
+            # _sync_orders_impl. Reading here is layout-independent for
+            # both Hisense and HQ.
+            serial = await get_field_value("Nº de Série")
+            if not serial:
+                serial = await get_field_value("Nº Série")
+            if not serial:
+                serial = await get_field_value("Número de Série")
+            if not serial:
+                serial = await get_field_value("Numero de Serie")
+            if not serial:
+                serial = await get_field_value("Série")
+            if serial and serial not in ("-", "--", "---"):
+                order_data["serial_number"] = serial.strip()
+
+            # Opening date = "Abertura" on HQ consumer OSs (or "Data de
+            # Abertura" on some versions). Falls back to registration_date
+            # for Hisense.
+            opened = await get_field_value("Abertura")
+            if not opened:
+                opened = await get_field_value("Data de Abertura")
+            if not opened:
+                opened = await get_field_value("Data Abertura")
+            if not opened:
+                opened = await get_field_value("Data de Registro")
+            if opened:
+                order_data["registration_date"] = opened.strip()
+
             state = await get_field_value("Estado")
             if not state:
                 state = await get_field_value("UF")
             if state:
                 order_data["state"] = state
             
-            # Extract defect - try multiple field names
+            # Extract defect - try multiple field names.
+            #
+            # HQ CONSUMER-OS FIX (31/07/2026): on HQ consumer service orders
+            # the "Defeito Reclamado Cliente" field is often blank because
+            # the real complaint is written in "Observação" instead
+            # (example from real OS: "PRODUTO NÃO ESTÁ GELANDO DA FORMA
+            # ADEQUADA. PRODUTO NÃO REFRIGERA... Produto com vazamento
+            # interno"). Fall back to Observação for HQ when the dedicated
+            # defect field is empty — Hisense unchanged since it always
+            # fills the defect field properly.
             defect = await get_field_value("Defeito Reclamado Cliente")
             if not defect:
                 defect = await get_field_value("Reclamado")
+            if not defect and self.source_label == "telecontrol_hq":
+                # Try several observation-like labels — Telecontrol renames
+                # this field slightly across versions.
+                for label in ("Observação", "Observacao", "Observações",
+                              "Observacoes", "Obs"):
+                    obs = await get_field_value(label)
+                    if obs and len(obs.strip()) > 3:
+                        defect = obs.strip()
+                        break
             if defect:
                 order_data["reported_defect"] = defect
-            
-            # Extract service type
+
+            # Extract service type — HQ often uses "Modalidade Atendimento"
+            # or just "Atendimento" instead of "Tipo de Atendimento". Try
+            # all variants so we don't fall back to the (wrong) list-page
+            # value ("CONSUMIDOR").
             service_type = await get_field_value("Tipo de Atendimento")
+            if not service_type:
+                for label in ("Modalidade Atendimento", "Modalidade",
+                              "Atendimento", "Tipo Atendimento"):
+                    sv = await get_field_value(label)
+                    if sv:
+                        service_type = sv
+                        break
             if service_type:
                 order_data["service_type"] = service_type
             
@@ -939,9 +1071,9 @@ class TelecontrolScraper:
                     )
                 except Exception as e:  # noqa: BLE001
                     result["errors"].append(
-                        f"Login attempt {attempt}/2 raised: {e}"
+                        f"Login attempt {attempt}/2 raised: {type(e).__name__}: {e}"
                     )
-                    logger.warning(
+                    logger.exception(
                         f"[{self.source_label}] Login attempt {attempt}/2 failed: {e}"
                     )
                 if attempt < 2:
@@ -1005,6 +1137,31 @@ class TelecontrolScraper:
                             )
                             continue
                     
+                    # HQ TABLE LAYOUT FIX (31/07/2026):
+                    # The list-page parser _extract_orders_from_page uses HARDCODED
+                    # cell indices (cells[2]=serial, cells[3]=date, cells[8]=service_type,
+                    # cells[9]=defect, etc.) that only match the HISENSE table layout.
+                    # HQ's table has columns in different positions, so these fixed
+                    # indices pull the WRONG data (user report 31/07):
+                    #   service_type ← "CONSUMIDOR"          (was reading customer name column)
+                    #   serial_number ← "83773 - REFRIGERADOR..." (was reading product col)
+                    #   registration_date ← serial number    (was reading serial col)
+                    #   reported_defect ← customer phone     (was reading phone col)
+                    # Rather than guess HQ's real column positions (which requires
+                    # a valid HQ session to inspect the DOM), we surgically DROP
+                    # these fields from the summary for HQ syncs. `fetch_order_details`
+                    # reads them by label ("Tipo de Atendimento" / "Defeito Reclamado
+                    # Cliente" / "Nº de Série" / "Abertura" / "Observação") — that
+                    # path is layout-independent and works for both sources.
+                    #
+                    # For HQ the "Defeito Reclamado Cliente" label is often blank
+                    # on consumer OSs; the real defect lives in "Observação". The
+                    # get_observation_defect() helper below picks it up as fallback.
+                    if self.source_label == "telecontrol_hq":
+                        for _bad in ("service_type", "reported_defect",
+                                     "serial_number", "registration_date"):
+                            order_summary.pop(_bad, None)
+
                     if existing:
                         # Diagnostic: log unmapped color codes so we can add
                         # them to statusColorMap. Only log once per color per
@@ -1139,8 +1296,8 @@ class TelecontrolScraper:
             result["degraded"] = bool(result["errors"]) and result["success"]
 
         except Exception as e:
-            logger.error(f"[{self.source_label}] Sync error: {e}")
-            result["errors"].append(str(e))
+            logger.exception(f"[{self.source_label}] Sync error: {type(e).__name__}: {e}")
+            result["errors"].append(f"{type(e).__name__}: {e}")
             result["success"] = False
         finally:
             await self.close_browser()

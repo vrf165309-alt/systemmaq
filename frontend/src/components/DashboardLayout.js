@@ -15,12 +15,13 @@ import {
   Navigation,
   BookOpen,
   MessageCircle,
-  AlertTriangle,
+  BellRing,
   Activity,
   RotateCw,
   Users,
   Webhook,
-  Tag
+  Tag,
+  AlertTriangle
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import {
@@ -101,12 +102,19 @@ const DashboardLayout = ({ children, unreadCount = 0 }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [canInstallPWA, setCanInstallPWA] = useState(false);
-  const [overdueData, setOverdueData] = useState({ count: 0, orders: [] });
+  const [alerts, setAlerts] = useState({ count: 0, by_type: {}, latest: null, items: [] });
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const seenAlertIdsRef = React.useRef(new Set());
+  const [quickViewOS, setQuickViewOS] = useState(null);
+  const [newOSAlert, setNewOSAlert] = useState(null);
   const [showOverdueModal, setShowOverdueModal] = useState(false);
   const [overdueSearch, setOverdueSearch] = useState('');
   const [overdueStatusFilter, setOverdueStatusFilter] = useState('all');
-  const [quickViewOS, setQuickViewOS] = useState(null);
-  const [newOSAlert, setNewOSAlert] = useState(null);
+
+  const [overdueData, setOverdueData] = useState({
+    count: 0,""
+    orders: []
+  });
   const [scraperHealth, setScraperHealth] = useState({ overall: 'ok', scrapers: {} });
   const lastExtCountRef = React.useRef(null);
   const audioRef = React.useRef(null);
@@ -137,13 +145,83 @@ const DashboardLayout = ({ children, unreadCount = 0 }) => {
     }
   }, [isInvisacook]);
 
+  // Libera o autoplay do áudio no primeiro toque/tecla do usuário.
+  // Sem isso o Chrome/Safari bloqueiam a campainha silenciosamente.
   useEffect(() => {
-    if (token && isAdmin) {
-      axios.get(`${API}/api/service-orders/overdue-at`, getAuth())
-        .then(res => setOverdueData(res.data))
-        .catch(() => {});
-    }
-  }, [token, API, getAuth, isAdmin]);
+    const unlock = () => {
+      const a = audioRef.current;
+      if (!a) return;
+      const vol = a.volume;
+      a.volume = 0;
+      a.play()
+        .then(() => { a.pause(); a.currentTime = 0; a.volume = vol; })
+        .catch(() => { a.volume = vol; });
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+    window.addEventListener('pointerdown', unlock);
+    window.addEventListener('keydown', unlock);
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, []);
+
+  const getAckedAlerts = () => {
+    try { return new Set(JSON.parse(localStorage.getItem('ackedAlerts') || '[]')); }
+    catch { return new Set(); }
+  };
+
+  const ackAlert = useCallback((id) => {
+    if (!id) return;
+    try {
+      const existing = JSON.parse(localStorage.getItem('ackedAlerts') || '[]');
+      if (!existing.includes(id)) existing.push(id);
+      localStorage.setItem('ackedAlerts', JSON.stringify(existing.slice(-300)));
+    } catch { /* ignore */ }
+    setAlerts(prev => ({
+      ...prev,
+      items: prev.items.filter(i => i.id !== id),
+      count: Math.max(0, prev.count - 1),
+    }));
+  }, []);
+
+  const ackAllAlerts = useCallback(() => {
+    try {
+      const existing = JSON.parse(localStorage.getItem('ackedAlerts') || '[]');
+      const merged = [...new Set([...existing, ...alerts.items.map(i => i.id)])];
+      localStorage.setItem('ackedAlerts', JSON.stringify(merged.slice(-300)));
+    } catch { /* ignore */ }
+    setAlerts(prev => ({ ...prev, items: [], count: 0 }));
+  }, [alerts.items]);
+
+  // Campainha: OS nova do Telecontrol (Hisense/HQ), mudança de status
+  // dessas OSs e OS aberta há mais de 30 dias.
+  useEffect(() => {
+    if (!token || !isAdmin || isInvisacook) return;
+    const poll = async () => {
+      try {
+        const res = await axios.get(`${API}/api/alerts/summary`, getAuth());
+        const acked = getAckedAlerts();
+        const items = (res.data?.items || []).filter(i => !acked.has(i.id));
+        const hasNew = items.some(i => !seenAlertIdsRef.current.has(i.id));
+        items.forEach(i => seenAlertIdsRef.current.add(i.id));
+        setAlerts({
+          count: items.length,
+          by_type: res.data?.by_type || {},
+          latest: items[0] || null,
+          items,
+        });
+        if (hasNew) {
+          try { audioRef.current?.play(); } catch (e) { /* autoplay bloqueado */ }
+        }
+      } catch { /* ignore */ }
+    };
+    poll();
+    const i = setInterval(poll, 60000);
+    return () => clearInterval(i);
+  }, [token, API, getAuth, isAdmin, isInvisacook]);
+
 
   // Poll for new external OS every 15 seconds — admin only (not invisacook)
   useEffect(() => {
@@ -416,22 +494,65 @@ const DashboardLayout = ({ children, unreadCount = 0 }) => {
               </DropdownMenu>
             )}
 
-            {/* Overdue OS badge — admin only (hidden for invisacook) */}
-            {isAdmin && !isInvisacook && overdueData.count > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="relative text-red-600 hover:text-red-700 hover:bg-red-50 gap-1.5 px-2"
-                onClick={() => setShowOverdueModal(true)}
-                data-testid="overdue-at-badge"
-              >
-                <AlertTriangle size={16} />
-                <span className="text-xs font-medium hidden sm:inline">OS Atrasadas</span>
-                <Badge className="h-5 min-w-5 flex items-center justify-center p-0 text-[10px] bg-red-600 hover:bg-red-600">
-                  {overdueData.count}
-                </Badge>
-              </Button>
+            {/* Alertas (campainha) — admin only */}
+            {isAdmin && !isInvisacook && alerts.count > 0 && (
+              <DropdownMenu open={alertsOpen} onOpenChange={setAlertsOpen}>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="relative text-amber-600 hover:text-amber-700 hover:bg-amber-50 gap-1.5 px-2"
+                    data-testid="alerts-badge"
+                    title="Novas OSs Telecontrol, mudanças de status e OSs com mais de 30 dias"
+                  >
+                    <BellRing size={16} className="animate-pulse" />
+                    <span className="text-xs font-medium hidden sm:inline">Alertas</span>
+                    <Badge className="h-5 min-w-5 flex items-center justify-center p-0 text-[10px] bg-amber-600 hover:bg-amber-600">
+                      {alerts.count > 99 ? '99+' : alerts.count}
+                    </Badge>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-96 p-0 max-h-[70vh] overflow-y-auto" data-testid="alerts-panel">
+                  <div className="p-3 border-b flex items-center justify-between sticky top-0 bg-white z-10">
+                    <div>
+                      <h3 className="font-semibold text-sm">Alertas</h3>
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        {alerts.by_type?.telecontrol_new_os || 0} nova(s) · {alerts.by_type?.telecontrol_status_change || 0} status · {alerts.by_type?.os_aging || 0} antiga(s)
+                      </p>
+                    </div>
+                    <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={ackAllAlerts} data-testid="alerts-ack-all">
+                      Marcar todos
+                    </Button>
+                  </div>
+                  {alerts.items.map(a => (
+                    <div key={a.id} className="p-3 border-b last:border-0 hover:bg-gray-50" data-testid={`alert-${a.id}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`h-2 w-2 rounded-full ${
+                              a.type === 'telecontrol_new_os' ? 'bg-blue-500'
+                                : a.type === 'telecontrol_status_change' ? 'bg-purple-500'
+                                : 'bg-red-500'
+                            }`}></span>
+                            <span className="text-xs font-medium">{a.title}</span>
+                          </div>
+                          <p className="text-[11px] text-gray-600 mt-0.5 break-words">{a.message}</p>
+                        </div>
+                        <div className="flex flex-col gap-1 shrink-0">
+                          <Button size="sm" variant="outline" className="h-6 px-2 text-[11px]" onClick={() => setQuickViewOS(a.os_number)}>
+                            Ver OS
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={() => ackAlert(a.id)}>
+                            OK
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
+
 
             {/* Notifications — admin only (hidden for invisacook) */}
             {isAdmin && !isInvisacook && (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import axios from 'axios';
 import DashboardLayout from '../components/DashboardLayout';
 import { Button } from '../components/ui/button';
@@ -10,7 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   Package, Plus, Search, ArrowUpCircle, ArrowDownCircle,
   Truck, ClipboardList, AlertTriangle, XCircle, CheckCircle,
-  Trash2, Edit, ChevronDown, ChevronUp, BarChart3, QrCode, Upload
+  Trash2, Edit, ChevronDown, ChevronUp, BarChart3, QrCode, Upload, X
 } from 'lucide-react';
 import { printProductLabel } from '../utils/printingService';
 
@@ -51,30 +51,148 @@ const StockBadge = ({ current, min }) => {
 };
 
 // === Product Form Modal ===
+const PRODUCT_TYPES = [
+  'Geladeira', 'Freezer', 'Fogão', 'Cooktop', 'Forno', 'Micro-ondas',
+  'Coifa', 'Depurador', 'Lava-louças', 'Lava-roupas', 'Secadora',
+  'Ar-condicionado', 'Adega', 'Cervejeira', 'Purificador', 'Bebedouro',
+  'Cafeteira', 'Fritadeira', 'Liquidificador', 'Batedeira', 'Outros',
+];
+
 const ProductFormModal = ({ open, onClose, product, onSave, categoryOptions = [] }) => {
   const [form, setForm] = useState({
     code: '', name: '', category: '', brand: '', model: '',
     description: '', unit: 'UN', cost: 0, sale_price: 0,
     default_supplier: '', min_stock: 0, location: '',
     serial_number: '', batch: '',
+    product_type: '', image_url: '',
   });
+  // Image capture state — see /app/memory/graphify_usage.md notes on this
+  // pattern. `imagePreview` is what we render; `imageFile` is the raw File
+  // to upload on submit; `hasNewImage` distinguishes "user changed picture"
+  // from "user is just editing other fields" so we don't re-upload the
+  // same image on every save.
+  const [imagePreview, setImagePreview] = useState('');
+  const [imageFile, setImageFile] = useState(null);
+  const [hasNewImage, setHasNewImage] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef(null);
+  const dropRef = useRef(null);
 
   useEffect(() => {
     if (product) {
-      setForm({ ...form, ...product });
+      setForm({
+        code: '', name: '', category: '', brand: '', model: '',
+        description: '', unit: 'UN', cost: 0, sale_price: 0,
+        default_supplier: '', min_stock: 0, location: '',
+        serial_number: '', batch: '',
+        product_type: '', image_url: '',
+        ...product,
+      });
+      setImagePreview(product.image_url || '');
     } else {
       setForm({ code: '', name: '', category: '', brand: '', model: '',
         description: '', unit: 'UN', cost: 0, sale_price: 0,
         default_supplier: '', min_stock: 0, location: '',
-        serial_number: '', batch: '' });
+        serial_number: '', batch: '',
+        product_type: '', image_url: '' });
+      setImagePreview('');
     }
+    setImageFile(null);
+    setHasNewImage(false);
   }, [product, open]);
 
-  const handleSubmit = (e) => {
+  // Ctrl+V paste — only when this modal is the active surface. We attach on
+  // the container ref and stop propagation so the page-wide paste handler
+  // (if any) doesn't also fire.
+  useEffect(() => {
+    if (!open) return;
+    const onPaste = (e) => {
+      const items = e.clipboardData?.items || [];
+      for (const it of items) {
+        if (it.type && it.type.startsWith('image/')) {
+          const blob = it.getAsFile();
+          if (blob) { processImageFile(blob); e.preventDefault(); break; }
+        }
+      }
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [open]);
+
+  const processImageFile = (file) => {
+    if (!file || !file.type?.startsWith('image/')) return;
+    setImageFile(file);
+    const reader = new FileReader();
+    reader.onload = () => {
+      setImagePreview(reader.result);
+      setHasNewImage(true);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleFileInputChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) processImageFile(file);
+    e.target.value = '';  // allow re-selecting the same file
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault(); setDragOver(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (file) processImageFile(file);
+  };
+
+  const handleUrlImage = async () => {
+    const url = window.prompt('Cole a URL da imagem:');
+    if (!url) return;
+    const trimmed = url.trim();
+    if (!/^https?:\/\//i.test(trimmed)) {
+      toast.error('URL inválida');
+      return;
+    }
+    // For a URL, we skip re-upload: store as-is. Preview shows the image
+    // straight from the source. hasNewImage stays false because there's
+    // nothing to upload to Storage.
+    setImagePreview(trimmed);
+    setForm(f => ({ ...f, image_url: trimmed }));
+    setImageFile(null);
+    setHasNewImage(false);
+  };
+
+  const clearImage = () => {
+    setImagePreview('');
+    setImageFile(null);
+    setHasNewImage(false);
+    setForm(f => ({ ...f, image_url: '' }));
+  };
+
+  const uploadImageToStorage = async (file) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    const token = localStorage.getItem('token');
+    const res = await axios.post(
+      `${API}/inventory/upload-image`,
+      fd,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    return res.data.url;
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // No field is required — the backend auto-generates `code` when empty so
-    // the QR label always works. Empty fields are stored as empty strings.
-    onSave(form);
+    try {
+      let finalImageUrl = form.image_url || '';
+      if (hasNewImage && imageFile) {
+        setUploading(true);
+        finalImageUrl = await uploadImageToStorage(imageFile);
+      }
+      onSave({ ...form, image_url: finalImageUrl });
+    } catch (err) {
+      toast.error('Falha ao enviar imagem: ' + (err?.response?.data?.detail || err.message));
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
@@ -82,7 +200,81 @@ const ProductFormModal = ({ open, onClose, product, onSave, categoryOptions = []
       <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader><DialogTitle>{product ? 'Editar Produto' : 'Novo Produto'}</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3">
+          {/* IMAGE — first, as user requested. Click / drag / Ctrl+V / URL. */}
+          <div>
+            <Label className="text-xs">Imagem do Produto</Label>
+            <div
+              ref={dropRef}
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleDrop}
+              onClick={() => !imagePreview && fileInputRef.current?.click()}
+              className={`relative w-full h-40 border-2 border-dashed rounded-md flex items-center justify-center overflow-hidden cursor-pointer transition-colors ${
+                dragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
+              }`}
+              data-testid="product-image-dropzone"
+            >
+              {imagePreview ? (
+                <>
+                  <img
+                    src={imagePreview}
+                    alt="preview"
+                    className="max-w-full max-h-full object-contain"
+                    data-testid="product-image-preview"
+                  />
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); clearImage(); }}
+                    className="absolute top-1 right-1 bg-white/90 hover:bg-white rounded-full p-1 shadow"
+                    aria-label="Remover imagem"
+                    data-testid="product-image-clear"
+                  >
+                    <X size={14} />
+                  </button>
+                </>
+              ) : (
+                <div className="text-center text-xs text-gray-500 px-2">
+                  <div className="font-medium">Clique, arraste ou cole (Ctrl+V) uma imagem</div>
+                  <div className="mt-0.5">JPG, PNG, WEBP · até 8 MB</div>
+                </div>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleFileInputChange}
+                className="hidden"
+                data-testid="product-image-file-input"
+              />
+            </div>
+            <div className="flex gap-2 mt-1">
+              <Button type="button" variant="outline" size="sm" className="text-xs h-7"
+                onClick={() => fileInputRef.current?.click()} data-testid="product-image-pick">
+                Escolher arquivo
+              </Button>
+              <Button type="button" variant="outline" size="sm" className="text-xs h-7"
+                onClick={handleUrlImage} data-testid="product-image-url">
+                Usar URL
+              </Button>
+              {uploading && <span className="text-xs text-blue-600 self-center">Enviando…</span>}
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2"><Label className="text-xs">Produto</Label>
+              {/* product_type = user-facing category: "Geladeira", "Coifa", etc.
+                  Datalist gives a starter set but user can type anything. */}
+              <Input
+                list="product-type-options"
+                value={form.product_type}
+                onChange={e => setForm({...form, product_type: e.target.value})}
+                className="h-8 text-sm"
+                placeholder="Ex: Geladeira, Coifa, Fogão..."
+                data-testid="product-type"
+              />
+              <datalist id="product-type-options">
+                {PRODUCT_TYPES.map(t => <option key={t} value={t} />)}
+              </datalist></div>
             <div><Label className="text-xs">Código</Label>
               <Input value={form.code} onChange={e => setForm({...form, code: e.target.value})} className="h-8 text-sm" readOnly={!!product} placeholder={product ? '' : 'auto-gerado se vazio'} data-testid="product-code" /></div>
             <div><Label className="text-xs">Nome</Label>
@@ -140,7 +332,9 @@ const ProductFormModal = ({ open, onClose, product, onSave, categoryOptions = []
             <Input value={form.description} onChange={e => setForm({...form, description: e.target.value})} className="h-8 text-sm" /></div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" size="sm" onClick={onClose}>Cancelar</Button>
-            <Button type="submit" size="sm" data-testid="product-save-btn">Salvar</Button>
+            <Button type="submit" size="sm" disabled={uploading} data-testid="product-save-btn">
+              {uploading ? 'Enviando…' : 'Salvar'}
+            </Button>
           </div>
         </form>
       </DialogContent>

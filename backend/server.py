@@ -1666,6 +1666,152 @@ async def get_overdue_at(_: dict = Depends(verify_token)):
     cache.set("overdue", result, ttl=300)
     return result
 
+# ─── Alertas do cabeçalho (campainha) ─────────────────────────────
+# Três gatilhos, todos derivados dos dados existentes (sem tabela nova):
+#   1) OS nova vinda do Telecontrol (Hisense/HQ)
+#   2) mudança de status em OS Hisense/HQ
+#   3) OS em aberto há mais de ALERT_AGING_DAYS dias
+ALERT_TELECONTROL_SOURCES = ["telecontrol", "telecontrol_hisense", "telecontrol_hq"]
+ALERT_CLOSED_STATUSES = ["Finalizada", "OS Cancelada"]
+ALERT_LOOKBACK_HOURS = int(os.environ.get("ALERT_LOOKBACK_HOURS", 24))
+ALERT_AGING_DAYS = int(os.environ.get("ALERT_AGING_DAYS", 30))
+
+
+def _parse_os_date(value):
+    """Aceita os formatos de data usados em service_orders."""
+    if not value:
+        return None
+    s = str(value).strip()
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(s[:min(19, len(s))], fmt).replace(tzinfo=timezone.utc)
+        except Exception:
+            continue
+    return None
+
+
+def _tc_label(source: str) -> str:
+    return "HQ" if source == "telecontrol_hq" else "Hisense"
+
+
+@api_router.get("/alerts/summary")
+async def get_alerts_summary(_: dict = Depends(verify_token)):
+    """Alertas que devem tocar a campainha e acender o badge do cabeçalho."""
+    cached = cache.get("alerts_summary")
+    if cached:
+        return cached
+
+    now = datetime.now(timezone.utc)
+    since = (now - timedelta(hours=ALERT_LOOKBACK_HOURS)).isoformat()
+    items = []
+
+    # 1) OS nova do Telecontrol (Hisense / HQ)
+    try:
+        new_orders = await db.service_orders.find(
+            {"source": {"$in": ALERT_TELECONTROL_SOURCES}, "created_at": {"$gte": since}},
+            {"_id": 0, "os_number": 1, "customer_name": 1, "source": 1, "status": 1, "created_at": 1},
+        ).sort("created_at", -1).to_list(50)
+    except Exception as e:
+        logger.warning(f"alerts: falha ao buscar novas OS Telecontrol: {e}")
+        new_orders = []
+
+    for o in new_orders:
+        label = _tc_label(o.get("source"))
+        items.append({
+            "id": f"new:{o.get('os_number')}",
+            "type": "telecontrol_new_os",
+            "os_number": o.get("os_number"),
+            "source": o.get("source"),
+            "title": f"Nova OS {label}",
+            "message": f"OS {o.get('os_number')} chegou do Telecontrol {label} — {o.get('customer_name') or ''}".strip(" —"),
+            "created_at": o.get("created_at"),
+        })
+
+    # 2) Mudança de status em OS Hisense / HQ
+    try:
+        notifs = await db.notifications.find(
+            {"created_at": {"$gte": since}},
+            {"_id": 0, "id": 1, "os_number": 1, "old_status": 1, "new_status": 1, "created_at": 1},
+        ).sort("created_at", -1).to_list(200)
+    except Exception as e:
+        logger.warning(f"alerts: falha ao buscar notificações: {e}")
+        notifs = []
+
+    notif_os = list(dict.fromkeys([str(n.get("os_number")) for n in notifs if n.get("os_number")]))
+    source_by_os = {}
+    if notif_os:
+        try:
+            rows = await db.service_orders.find(
+                {"os_number": {"$in": notif_os[:200]}},
+                {"_id": 0, "os_number": 1, "source": 1},
+            ).to_list(500)
+            source_by_os = {str(r.get("os_number")): r.get("source") for r in rows}
+        except Exception as e:
+            logger.warning(f"alerts: falha ao resolver source das OSs: {e}")
+
+    for n in notifs:
+        os_num = str(n.get("os_number") or "")
+        src = source_by_os.get(os_num)
+        if src not in ALERT_TELECONTROL_SOURCES:
+            continue
+        label = _tc_label(src)
+        items.append({
+            "id": f"status:{n.get('id') or (os_num + str(n.get('created_at')))}",
+            "type": "telecontrol_status_change",
+            "os_number": os_num,
+            "source": src,
+            "title": f"Status alterado ({label})",
+            "message": f"OS {os_num}: '{n.get('old_status') or '—'}' → '{n.get('new_status')}'",
+            "created_at": n.get("created_at"),
+        })
+
+    # 3) OS em aberto há mais de 30 dias
+    try:
+        aging_rows = await db.service_orders.find(
+            {"status": {"$nin": ALERT_CLOSED_STATUSES}},
+            {"_id": 0, "os_number": 1, "customer_name": 1, "status": 1, "source": 1,
+             "registration_date": 1, "attendance_date": 1, "created_at": 1},
+        ).to_list(10000)
+    except Exception as e:
+        logger.warning(f"alerts: falha ao buscar OSs antigas: {e}")
+        aging_rows = []
+
+    for o in aging_rows:
+        base = None
+        for f in ("attendance_date", "registration_date", "created_at"):
+            base = _parse_os_date(o.get(f))
+            if base:
+                break
+        if not base:
+            continue
+        days = (now - base).days
+        if days > ALERT_AGING_DAYS:
+            items.append({
+                "id": f"aging:{o.get('os_number')}",
+                "type": "os_aging",
+                "os_number": o.get("os_number"),
+                "source": o.get("source"),
+                "days": days,
+                "title": f"OS com {days} dias",
+                "message": f"OS {o.get('os_number')} aberta há {days} dias — {o.get('customer_name') or ''}".strip(" —"),
+                "created_at": base.isoformat(),
+            })
+
+    items.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
+    result = {
+        "count": len(items),
+        "by_type": {
+            "telecontrol_new_os": sum(1 for i in items if i["type"] == "telecontrol_new_os"),
+            "telecontrol_status_change": sum(1 for i in items if i["type"] == "telecontrol_status_change"),
+            "os_aging": sum(1 for i in items if i["type"] == "os_aging"),
+        },
+        "latest": items[0] if items else None,
+        "items": items[:100],
+    }
+    cache.set("alerts_summary", result, ttl=60)
+    return result
+
+
 @api_router.get("/service-orders/{os_number}/customer-history")
 async def get_customer_history(os_number: str, _: dict = Depends(verify_token)):
     """Get other service orders from the same customer"""
@@ -2943,9 +3089,13 @@ async def fetch_temp_pdf(token: str):
         headers={"Content-Disposition": f"inline; filename=\"{entry['filename']}\""},
     )
 
-# Initialize inventory routes with db and JWT secret
+# Initialize inventory routes with db and JWT secret.
+# `mongo_db` is a native Motor handle used by inventory_routes for the
+# `product_metadata` sidecar (image_url + product_type). Once the SQL
+# migration in /app/backend/migrations/products_add_image_and_type.sql is
+# applied, this sidecar can be retired but keeps working as a fallback.
 from inventory_routes import init as init_inventory
-init_inventory(db, JWT_SECRET)
+init_inventory(db, JWT_SECRET, mongo=mongo_db)
 api_router.include_router(inventory_router)
 
 # Include routes module
