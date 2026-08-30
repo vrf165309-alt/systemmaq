@@ -53,6 +53,32 @@ O guard `isPrevEmpty` já protege contra sobrescrever fotos em upload local. O `
 - README de manutenção do scraper
 - Documentação de referência
 
+## Sessão 30/08/2026 — 3 fixes de UX
+
+### 6. Aba "OSs Atrasadas" não renderizava (ServiceOrdersPage.js:1196)
+- Havia um comentário TODO `{/* ↓↓↓ COLE AQUI o bloco <TabsContent value="overdue"> ↓↓↓ */}` no lugar do TabsContent — nunca foi implementado.
+- Backend `/api/service-orders/overdue-at` já retornava 93 OSs (validado com curl). Só faltava o container do lado do React.
+- Fix: implementado TabsContent com cards (visual vermelho), filtros por status (Aguardando Análise A.T / Peças / Conserto), busca, badge de dias, link WhatsApp e navegação clicando no card (`handleOrderClick` — mesmo fluxo do Histórico).
+
+### 7. Campainha tocando ao mudar de página (DashboardLayout.js:200)
+- DashboardLayout é usado por cada página individual → desmonta a cada rota → `seenAlertIdsRef` (useRef) resetava a Set vazia → primeiro `poll()` interpretava TODOS os alertas como "novos" → `audioRef.current.play()`.
+- Fix: adicionado `alertsFirstPollRef` que sinaliza o primeiro poll após montar. O áudio só toca se houver item novo E não for o primeiro poll. Os IDs continuam sendo populados no ref.
+- Pattern espelha o segundo useEffect (linha 227) que já usava `lastExtCountRef.current !== null` pra mesma proteção.
+
+### 8. Adesivo personalizado imprimindo torto / vários por impressão (LabelTemplatesPage.js + printingService.js)
+- CSS antigo: `@page { size: 50mm 30mm; margin: 0 }` sem `landscape`, sem `page-break-after`, sem margem para o liner de 4mm da bobina 58mm.
+- Consequência: impressora térmica alinhava conteúdo em pé, fora da margem, e cuspia várias etiquetas em branco antes de sair uma correta.
+- Fix: criada função `printCustomLabel(pngDataUrl, { sizeKey, customContent, name })` em `printingService.js` que replica EXATAMENTE a geometria de `printOSLabel`/`printProductLabel`:
+  * paper = 58×30mm (com 4mm de liner) para preset `50×30`
+  * `landscape` explícito
+  * `page-break-after: always` + `break-inside: avoid`
+  * screen preview 3× antes de imprimir + botão explícito (não auto-print)
+- `LabelTemplatesPage.print()` agora mapeia size preset → sizeKey e delega para `printCustomLabel`. Presets 80×50 e 100×50 sem liner (paper = content). Tamanhos custom = paper próprio.
+
+## P0 investigado (não era bug de agendamento)
+- Scheduler dos scrapers (`hisense_loop` + `_scraper_watchdog`) confirmado rodando após restart do supervisor. Log mostra 74 ciclos executados, sync ativo a cada 30 min.
+- Últimos ciclos retornam `0 new, 0 updated` porque o auto-sync usa janela de 30 dias corridos (`datetime.now() - 30 days`), enquanto o `run_sync_manual.py` do usuário aponta para datas fixas do passado. Diferença é temporal, não de código.
+
 ## Stack
 - Frontend: React 19 (CRA + Craco), Tailwind, Shadcn/UI, lucide-react, axios, react-router 6
 - Backend: Python 3.11 + FastAPI + uvicorn (Supervisor porta 8001)

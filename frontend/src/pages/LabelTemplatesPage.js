@@ -18,6 +18,7 @@ import { Label } from '../components/ui/label';
 import { toast } from 'sonner';
 import { Save, Trash2, Type, Image as ImageIcon, Square, QrCode, Plus, FileText, Loader2, Printer } from 'lucide-react';
 import QRCode from 'qrcode';
+import { printCustomLabel } from '../utils/printingService';
 
 const API = `${process.env.REACT_APP_BACKEND_URL || ''}/api`;
 const DPI = 96 / 25.4; // px per mm
@@ -157,12 +158,22 @@ export default function LabelTemplatesPage() {
 
   const print = () => {
     if (!fabricRef.current) return;
+    // PNG em 3x pra manter nitidez no papel térmico (~305 DPI).
     const png = fabricRef.current.toDataURL({ format: 'png', multiplier: 3 });
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${name}</title>
-<style>@page{size:${size.w}mm ${size.h}mm;margin:0;} html,body{margin:0;padding:0;} img{display:block;width:${size.w}mm;height:${size.h}mm;}</style>
-</head><body><img src="${png}" alt="${name}"/><script>window.onload=()=>{setTimeout(()=>window.print(),150);window.onafterprint=()=>setTimeout(()=>window.close(),200);}</script></body></html>`;
-    const w = window.open('', '_blank', 'width=480,height=360');
-    w.document.open(); w.document.write(html); w.document.close();
+    // Mapa: tamanhos do editor → sizeKey do motor de impressão (SIZES em printingService).
+    // 50×30 → bobina 58mm com 4mm de liner (mesmo do adesivo de OS/Produto).
+    // 80×50 e 100×50 → paper = content (sem liner).
+    // Tamanhos custom → paperW/paperH = w/h do template, sem liner.
+    let sizeKey = null;
+    if (size.w === 50 && size.h === 30) sizeKey = '50x30';
+    else if (size.w === 30 && size.h === 50) sizeKey = '50x30-portrait';
+    else if (size.w === 80 && size.h === 50) sizeKey = '80x50';
+    else if (size.w === 100 && size.h === 50) sizeKey = '100x50';
+    printCustomLabel(png, {
+      sizeKey,
+      customContent: sizeKey ? null : { w: size.w, h: size.h },
+      name: name || 'Adesivo',
+    });
   };
 
   const newTemplate = () => {

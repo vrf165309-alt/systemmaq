@@ -1193,7 +1193,112 @@ const fetchOrders = useCallback(async () => {
             )}
           </TabsContent>
 
-          {/* ↓↓↓ COLE AQUI o bloco <TabsContent value="overdue"> ... </TabsContent> ↓↓↓ */}
+          <TabsContent value="overdue" className="mt-0">
+            {/* Filtros: busca + status */}
+            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+              <Input
+                placeholder="Buscar por OS, cliente, produto…"
+                value={overdueSearch}
+                onChange={(e) => setOverdueSearch(e.target.value)}
+                className="max-w-md border-gray-300"
+                data-testid="overdue-search"
+              />
+              <div className="flex gap-1 flex-wrap">
+                {['all', 'Aguardando Analise A.T', 'Aguardando Peças', 'Aguardando Conserto'].map(s => (
+                  <Button
+                    key={s}
+                    size="sm"
+                    variant={overdueStatusFilter === s ? 'default' : 'outline'}
+                    onClick={() => setOverdueStatusFilter(s)}
+                    className="text-xs"
+                    data-testid={`overdue-filter-${s.replace(/\s+/g, '-')}`}
+                  >
+                    {s === 'all' ? 'Todos' : s}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            {overdueLoading ? (
+              <div className="flex items-center justify-center py-12" data-testid="overdue-loading">
+                <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+              </div>
+            ) : (() => {
+              const q = overdueSearch.trim().toLowerCase();
+              const filtered = overdueOrders.filter(o => {
+                if (overdueStatusFilter !== 'all' && o.status !== overdueStatusFilter) return false;
+                if (!q) return true;
+                return (
+                  String(o.os_number || '').toLowerCase().includes(q) ||
+                  String(o.customer_name || '').toLowerCase().includes(q) ||
+                  String(o.product || '').toLowerCase().includes(q) ||
+                  String(o.brand || '').toLowerCase().includes(q) ||
+                  String(o.model || '').toLowerCase().includes(q)
+                );
+              });
+              if (filtered.length === 0) {
+                return (
+                  <Card className="border-gray-200">
+                    <CardContent className="py-12 text-center">
+                      <AlertTriangle className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                      <p className="text-gray-500">Nenhuma OS atrasada &gt; 10 dias 🎉</p>
+                    </CardContent>
+                  </Card>
+                );
+              }
+              return (
+                <div className="grid gap-4" data-testid="overdue-list">
+                  {filtered.map((order) => (
+                    <Card
+                      key={order.os_number}
+                      className="border-red-100 hover:shadow-md transition-shadow cursor-pointer bg-red-50/30"
+                      onClick={() => handleOrderClick(order)}
+                      data-testid={`overdue-card-${order.os_number}`}
+                    >
+                      <CardContent className="p-4">
+                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap mb-2">
+                              <span className="text-base sm:text-lg font-semibold text-gray-900">
+                                OS #{order.os_number}
+                              </span>
+                              {getStatusBadge(order.status)}
+                              <Badge className="text-xs bg-red-600 text-white border-red-600" data-testid={`overdue-days-${order.os_number}`}>
+                                <AlertTriangle className="h-3 w-3 mr-0.5" />
+                                {order.days_waiting} dias
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-gray-600 mb-1">
+                              <span className="font-medium">{order.customer_name}</span>
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              {order.product} {order.brand ? `- ${order.brand}` : ''} {order.model || ''}
+                            </p>
+                            <p className="text-xs text-gray-400 mt-1">
+                              {order.city && order.neighborhood ? `${order.neighborhood}, ${order.city} • ` : ''}
+                              Registrado em {order.registration_date || '—'}
+                            </p>
+                          </div>
+                          {order.phone1 && (
+                            <a
+                              href={`https://wa.me/55${String(order.phone1).replace(/\D/g, '')}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-xs text-green-700 hover:underline flex-shrink-0"
+                              data-testid={`overdue-whatsapp-${order.os_number}`}
+                            >
+                              WhatsApp: {order.phone1}
+                            </a>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              );
+            })()}
+          </TabsContent>
 
           <TabsContent value="create" className="mt-0">
             <Card className="border-gray-200">

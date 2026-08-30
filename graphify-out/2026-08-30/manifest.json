@@ -1,16 +1,16 @@
 {
   ".emergent/cron/dispatch_webhook.sh": {
-    "mtime": 1785526780.032642,
+    "mtime": 1788128543.8618355,
     "ast_hash": "ea59c1bd709230292f41050e93dfa946",
     "semantic_hash": "ea59c1bd709230292f41050e93dfa946"
   },
   ".emergent/cron/watch_crons.sh": {
-    "mtime": 1785526780.0526419,
+    "mtime": 1788128543.8788357,
     "ast_hash": "1071ad1de232d3d12dea92619ce92699",
     "semantic_hash": "1071ad1de232d3d12dea92619ce92699"
   },
   ".emergent/cron/webhook_crond.sh": {
-    "mtime": 1785526780.0436418,
+    "mtime": 1788128543.8698356,
     "ast_hash": "a5414eb2f0aba69421eef8c4c2aa8954",
     "semantic_hash": "a5414eb2f0aba69421eef8c4c2aa8954"
   },
@@ -20,9 +20,9 @@
     "semantic_hash": "1c1ec0bf498a8b90a022ffb181d6ad49"
   },
   "backend/inventory_routes.py": {
-    "mtime": 1784506458.4272099,
-    "ast_hash": "764f107245f81ea5af4746aaa5dda481",
-    "semantic_hash": "764f107245f81ea5af4746aaa5dda481"
+    "mtime": 1788129430.7298222,
+    "ast_hash": "d698507d3ee7f55607d8886ac5cb15a7",
+    "semantic_hash": ""
   },
   "backend/label_templates_module.py": {
     "mtime": 1784506458.4272099,
@@ -80,9 +80,9 @@
     "semantic_hash": "fdaa4c39d58814e9d8f7cdfadc21a9ab"
   },
   "backend/server.py": {
-    "mtime": 1785525512.5146372,
-    "ast_hash": "2c03755b80c6bec63f7e20a3d821d63d",
-    "semantic_hash": "2c03755b80c6bec63f7e20a3d821d63d"
+    "mtime": 1788129462.114822,
+    "ast_hash": "0e3b02b27a9e41c62630d25758a2c048",
+    "semantic_hash": ""
   },
   "backend/supabase_db.py": {
     "mtime": 1784506458.42821,
@@ -95,9 +95,9 @@
     "semantic_hash": "68e115bfeef8940d8f1918fe39df5b7a"
   },
   "backend/telecontrol_scraper.py": {
-    "mtime": 1785526288.8556402,
-    "ast_hash": "9f8cad1e4c2e523e24921786061e89bf",
-    "semantic_hash": "9f8cad1e4c2e523e24921786061e89bf"
+    "mtime": 1788129133.6768267,
+    "ast_hash": "c4b38b01bf29a079049fc842df5ea3b0",
+    "semantic_hash": ""
   },
   "backend/tracking_module.py": {
     "mtime": 1784506458.42921,
@@ -165,9 +165,9 @@
     "semantic_hash": "ac9c2af2db2b52efd59df617ae3d3939"
   },
   "frontend/src/components/DashboardLayout.js": {
-    "mtime": 1785525520.3986373,
-    "ast_hash": "dd9d6072448058c9f5720f5da2d93cbd",
-    "semantic_hash": "dd9d6072448058c9f5720f5da2d93cbd"
+    "mtime": 1786992443.1263757,
+    "ast_hash": "3f472da46c53e0658b1c9ad70ca349c1",
+    "semantic_hash": ""
   },
   "frontend/src/components/LaudoModal.js": {
     "mtime": 1784656031.1841722,
@@ -470,9 +470,9 @@
     "semantic_hash": "69b0784ace9fb3eb26c6b2d2a93d9189"
   },
   "frontend/src/pages/InventoryPage.js": {
-    "mtime": 1784506458.4402099,
-    "ast_hash": "33fad7a69ddd1741c26d7d39d831cc5a",
-    "semantic_hash": "33fad7a69ddd1741c26d7d39d831cc5a"
+    "mtime": 1788128916.10483,
+    "ast_hash": "e38f9e0ae1b0610f68462a5ccdb5d9e4",
+    "semantic_hash": ""
   },
   "frontend/src/pages/LabelTemplatesPage.js": {
     "mtime": 1784506458.4402099,
@@ -515,9 +515,9 @@
     "semantic_hash": "211d2c6f5a7327d44a46ea6a50f15d70"
   },
   "frontend/src/pages/ServiceOrdersPage.js": {
-    "mtime": 1785527085.5166428,
-    "ast_hash": "baf06c4d55796afb056b1d648cb5f0d1",
-    "semantic_hash": "baf06c4d55796afb056b1d648cb5f0d1"
+    "mtime": 1786393623.3766935,
+    "ast_hash": "812b5128e55cabbae26a3f142e34f1d3",
+    "semantic_hash": ""
   },
   "frontend/src/pages/UsersPage.js": {
     "mtime": 1784506458.4402099,
@@ -565,13 +565,13 @@
     "semantic_hash": "36aa9b78b425171fee4f6d933e71b3c8"
   },
   ".emergent/emergent.yml": {
-    "mtime": 1784506458.4142098,
-    "ast_hash": "d52cae9d00ecdbf0636fe6f6715e81bf",
+    "mtime": 1786376405.1638012,
+    "ast_hash": "d64efbe871af35d2e609d311a4df480c",
     "semantic_hash": ""
   },
   ".emergent/system_deps.txt": {
-    "mtime": 1785527404.7355585,
-    "ast_hash": "8af59639578377a43a77c0808fe2eb3d",
+    "mtime": 1788127727.8948476,
+    "ast_hash": "3999a129894e482906bac35c31459a50",
     "semantic_hash": ""
   },
   "README.md": {
@@ -767,6 +767,16 @@
   "frontend/public/icons/mastermaq-original.png": {
     "mtime": 1784506458.43821,
     "ast_hash": "a94e945344fe600b5e2041e372d84964",
+    "semantic_hash": ""
+  },
+  "backend/migrations/products_add_image_and_type.sql": {
+    "mtime": 1788129315.960824,
+    "ast_hash": "07fa48232a5e12ebc58fde9e4676c1cb",
+    "semantic_hash": ""
+  },
+  "backend/run_sync_manual.py": {
+    "mtime": 1786740686.9282315,
+    "ast_hash": "561fb891c90cd0cd475ed247b961bf9e",
     "semantic_hash": ""
   }
 }

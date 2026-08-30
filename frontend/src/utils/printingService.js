@@ -359,6 +359,122 @@ function openPrintWindow(html) {
 export const LABEL_SIZES = Object.keys(SIZES);
 
 /**
+ * Imprime um adesivo com conteúdo CUSTOMIZADO (imagem PNG) —
+ * usado pelo editor de templates (LabelTemplatesPage). Reusa exatamente
+ * a mesma geometria física dos adesivos de OS/Produto:
+ *   • paper = bobina real (58×30mm, 80×50mm, 100×50mm)
+ *   • orientação landscape/portrait correta
+ *   • margem lateral (4mm de liner na bobina 58mm)
+ *   • @page + page-break-after para NÃO passar várias etiquetas por impressão
+ *
+ * Antes, o LabelTemplatesPage usava `@page { size: 50mm 30mm }` sem
+ * orientação nem margem, o que fazia a impressora térmica alinhar o
+ * conteúdo em pé, fora da margem, e cuspir várias etiquetas em branco
+ * até uma sair correta.
+ *
+ * O que essa função espera:
+ *   - `pngDataUrl`: exportação do canvas do fabric.js já no tamanho do
+ *     conteúdo (contentW × contentH mm), 3x multiplier para nitidez.
+ *   - `sizeKey`: uma chave conhecida de SIZES ('50x30', '80x50', ...).
+ *     Se o template tiver dimensões custom, chame com contentW/contentH
+ *     via `customContent`.
+ */
+export function printCustomLabel(pngDataUrl, { sizeKey = '50x30', customContent = null, name = 'Adesivo' } = {}) {
+  let cfg = SIZES[sizeKey];
+  if (!cfg && customContent) {
+    // Dimensões livres — assume papel = conteúdo, sem liner.
+    const isPortrait = customContent.h > customContent.w;
+    cfg = {
+      paperW: customContent.w, paperH: customContent.h,
+      contentW: customContent.w, contentH: customContent.h,
+      marginH: 0, marginV: 0,
+      orientation: isPortrait ? 'portrait' : 'landscape',
+    };
+  }
+  if (!cfg) cfg = SIZES['50x30'];
+
+  const { paperW, paperH, contentW, contentH, marginH, orientation } = cfg;
+  const isPortrait = orientation === 'portrait';
+
+  // MESMO padrão CSS de printOSLabel/printProductLabel — garante que a
+  // impressora térmica reconheça o adesivo (58mm de bobina, 4mm de liner)
+  // e alinhe o conteúdo dentro do 50×30mm útil.
+  const html = `<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>${name}</title>
+<style>
+@page { size: ${paperW}mm ${paperH}mm ${isPortrait ? 'portrait' : 'landscape'}; margin: 0; }
+@page :first { size: ${paperW}mm ${paperH}mm ${isPortrait ? 'portrait' : 'landscape'}; margin: 0; }
+* { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+html, body { margin: 0 !important; padding: 0 !important; background: #fff; width: ${paperW}mm; }
+body { width: ${paperW}mm; }
+.page {
+  width: ${paperW}mm;
+  height: ${paperH}mm;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  page-break-after: always;
+  break-after: page;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+.page:last-child { page-break-after: auto; break-after: auto; }
+.label {
+  width: ${contentW}mm;
+  height: ${contentH}mm;
+  margin-left: ${marginH}mm;
+  overflow: hidden;
+}
+.label img {
+  display: block;
+  width: ${contentW}mm;
+  height: ${contentH}mm;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+@media screen {
+  body { background: #f3f4f6; padding: 24px; font-family: 'Helvetica Neue', Arial, sans-serif; }
+  .screen-test { background: white; padding: 20px; border-radius: 12px; max-width: 420px;
+    margin: 0 auto 24px; box-shadow: 0 4px 24px rgba(0,0,0,.08); text-align: center; }
+  .screen-test h2 { margin: 0 0 12px; font-size: 15px; color: #111; }
+  .screen-test .hint { font-size: 12px; color: #6b7280; line-height: 1.4;
+    border-top: 1px solid #e5e7eb; padding-top: 12px; margin-top: 12px; }
+  .screen-test .btn { background: #111; color: white; padding: 10px 18px;
+    border: 0; border-radius: 6px; cursor: pointer; font-size: 13px;
+    margin-top: 8px; font-weight: 600; }
+  .screen-test .btn:hover { background: #374151; }
+  .preview { border: 1px dashed #cbd5e1; padding: 8px; margin: 0 auto 12px;
+    background: #fff; display: inline-block; }
+  .page { transform: scale(3); transform-origin: top center; margin: 8mm auto 90mm; }
+}
+@media print {
+  .screen-test { display: none !important; }
+  .page { transform: none; margin: 0; }
+}
+</style></head>
+<body>
+  <div class="screen-test">
+    <h2>${name} — ${contentW}×${contentH}mm</h2>
+    <div class="preview"><img src="${pngDataUrl}" alt="preview" style="width:${contentW * 3}mm;height:${contentH * 3}mm;" /></div>
+    <div class="hint">Preview do adesivo em tamanho 3×. Após conferir, clique em <strong>Imprimir</strong>. Só 1 adesivo por impressão — o gap entre etiquetas é controlado pelo sensor da impressora.</div>
+    <button class="btn" onclick="window.print()" data-testid="print-button">Imprimir</button>
+  </div>
+
+  <div class="page">
+    <div class="label">
+      <img src="${pngDataUrl}" alt="${name}" />
+    </div>
+  </div>
+  <script>
+    window.onafterprint = function() { setTimeout(function(){ try { window.close(); } catch(e){} }, 200); };
+  </script>
+</body></html>`;
+
+  openPrintWindow(html);
+}
+
+/**
  * Imprime um adesivo térmico para um PRODUTO de estoque.
  *
  * Reusa exatamente o mesmo motor da `printOSLabel`:

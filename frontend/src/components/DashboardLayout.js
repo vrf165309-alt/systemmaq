@@ -105,6 +105,7 @@ const DashboardLayout = ({ children, unreadCount = 0 }) => {
   const [alerts, setAlerts] = useState({ count: 0, by_type: {}, latest: null, items: [] });
   const [alertsOpen, setAlertsOpen] = useState(false);
   const seenAlertIdsRef = React.useRef(new Set());
+  const alertsFirstPollRef = React.useRef(true);
   const [quickViewOS, setQuickViewOS] = useState(null);
   const [newOSAlert, setNewOSAlert] = useState(null);
   const [showOverdueModal, setShowOverdueModal] = useState(false);
@@ -112,7 +113,7 @@ const DashboardLayout = ({ children, unreadCount = 0 }) => {
   const [overdueStatusFilter, setOverdueStatusFilter] = useState('all');
 
   const [overdueData, setOverdueData] = useState({
-    count: 0,""
+    count: 0,
     orders: []
   });
   const [scraperHealth, setScraperHealth] = useState({ overall: 'ok', scrapers: {} });
@@ -199,11 +200,15 @@ const DashboardLayout = ({ children, unreadCount = 0 }) => {
   // dessas OSs e OS aberta há mais de 30 dias.
   useEffect(() => {
     if (!token || !isAdmin || isInvisacook) return;
+    // Reset "first poll" ao (re)montar. Isso evita tocar a campainha
+    // ao mudar de página (DashboardLayout desmonta em cada rota).
+    alertsFirstPollRef.current = true;
     const poll = async () => {
       try {
         const res = await axios.get(`${API}/api/alerts/summary`, getAuth());
         const acked = getAckedAlerts();
         const items = (res.data?.items || []).filter(i => !acked.has(i.id));
+        const isFirstPoll = alertsFirstPollRef.current;
         const hasNew = items.some(i => !seenAlertIdsRef.current.has(i.id));
         items.forEach(i => seenAlertIdsRef.current.add(i.id));
         setAlerts({
@@ -212,9 +217,12 @@ const DashboardLayout = ({ children, unreadCount = 0 }) => {
           latest: items[0] || null,
           items,
         });
-        if (hasNew) {
+        // Só toca a campainha se JÁ houve um poll anterior nesta montagem —
+        // caso contrário, mudar de página tocaria o som toda vez.
+        if (hasNew && !isFirstPoll) {
           try { audioRef.current?.play(); } catch (e) { /* autoplay bloqueado */ }
         }
+        alertsFirstPollRef.current = false;
       } catch { /* ignore */ }
     };
     poll();

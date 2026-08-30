@@ -5,12 +5,12 @@
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1188 nodes · 1976 edges · 123 communities (70 shown, 53 thin omitted)
-- Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 7 edges (avg confidence: 0.59)
+- 1189 nodes · 1931 edges · 125 communities (71 shown, 54 thin omitted)
+- Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 6 edges (avg confidence: 0.55)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `7e4ecea5`
+- Built from commit: `68311345`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -21,14 +21,14 @@
 - inventory_routes.py
 - routes_module.py
 - tracking_module.py
-- form.jsx
-- ServiceOrdersPage.js
 - RoutesPage.js
+- ServiceOrdersPage.js
+- InventoryPage.js
 - laudo_generator.py
 - TelecontrolScraper
 - DashboardLayout.js
 - App.js
-- InventoryPage.js
+- UsersPage.js
 - post
 - utils.js
 - BaseModel
@@ -46,19 +46,19 @@
 - users_module.py
 - assinafy_service.py
 - ManuaisPage.js
-- mark_all_notifications_read
+- update_service_order
 - LoginPage.js
 - command.jsx
 - context-menu.jsx
 - whatsapp_module.py
 - migrate_to_supabase.py
-- startup_auto_sync
+- _scraper_watchdog
 - alert-dialog.jsx
 - table.jsx
 - migrate_railway.py
 - breadcrumb.jsx
 - drawer.jsx
-- dropdown-menu.jsx
+- carousel.jsx
 - navigation-menu.jsx
 - sheet.jsx
 - label_templates_module.py
@@ -70,14 +70,14 @@
 - migrate_fix.py
 - compilerOptions
 - health-endpoints.js
-- generate_laudo_word
+- get_alerts_summary
 - alert.jsx
 - Política de uso do Graphify neste projeto
 - migration_verify.py
 - CacheHeaderMiddleware
 - dispatch_webhook.sh
 - craco.config.js
-- accordion.jsx
+- AuthContext.js
 - Learn More
 - watch_crons.sh
 - axios
@@ -121,7 +121,7 @@
 - @react-google-maps/api
 - @radix-ui/react-toast
 - react-resizable-panels
-- react-router-dom
+- avatar.jsx
 - react-scripts
 - recharts
 - @supabase/supabase-js
@@ -132,20 +132,24 @@
 - react-day-picker
 - sonner
 - README.md
+- next-themes
+- AsyncClient
 
 ## God Nodes (most connected - your core abstractions)
 1. `cn()` - 67 edges
-2. `useAuth()` - 30 edges
+2. `useAuth()` - 26 edges
 3. `SupabaseCollection` - 19 edges
 4. `Button` - 16 edges
-5. `DashboardLayout()` - 14 edges
-6. `_get_client()` - 13 edges
-7. `_headers()` - 13 edges
-8. `Label` - 13 edges
-9. `TelecontrolScraper` - 12 edges
-10. `Input` - 12 edges
+5. `Label` - 13 edges
+6. `TelecontrolScraper` - 12 edges
+7. `Input` - 12 edges
+8. `FindCursor` - 11 edges
+9. `DashboardLayout()` - 10 edges
+10. `get_db()` - 10 edges
 
 ## Surprising Connections (you probably didn't know these)
+- `NotificationsPanel()` --calls--> `useAuth()`  [EXTRACTED]
+  frontend/src/components/NotificationsPanel.js → frontend/src/context/AuthContext.js
 - `OrderDetailOverlay()` --indirect_call--> `toast()`  [INFERRED]
   frontend/src/components/OrderDetailOverlay.js → frontend/src/hooks/use-toast.js
 - `AlertDialogHeader()` --calls--> `cn()`  [EXTRACTED]
@@ -154,17 +158,15 @@
   frontend/src/components/ui/alert-dialog.jsx → frontend/src/lib/utils.js
 - `BreadcrumbSeparator()` --calls--> `cn()`  [EXTRACTED]
   frontend/src/components/ui/breadcrumb.jsx → frontend/src/lib/utils.js
-- `BreadcrumbEllipsis()` --calls--> `cn()`  [EXTRACTED]
-  frontend/src/components/ui/breadcrumb.jsx → frontend/src/lib/utils.js
 
 ## Import Cycles
 - 3-file cycle: `frontend/src/components/DashboardLayout.js -> frontend/src/components/OrderDetailOverlay.js -> frontend/src/pages/ServiceOrdersPage.js -> frontend/src/components/DashboardLayout.js`
 
-## Communities (123 total, 53 thin omitted)
+## Communities (125 total, 54 thin omitted)
 
 ### Community 0 - "server.py"
 Cohesion: 0.04
-Nodes (73): api_health(), CEPResponse, check_new_external_os(), env_check(), fetch_temp_pdf(), get_alerts_summary(), get_customer_history(), get_dashboard() (+65 more)
+Nodes (72): api_health(), CEPResponse, check_new_external_os(), env_check(), fetch_temp_pdf(), generate_laudo_word(), get_customer_history(), get_dashboard() (+64 more)
 
 ### Community 1 - "devDependencies"
 Cohesion: 0.04
@@ -176,7 +178,7 @@ Nodes (17): AggCursor, FindCursor, _get_client(), _headers(), Supabase database 
 
 ### Community 3 - "inventory_routes.py"
 Cohesion: 0.08
-Nodes (45): _auth(), BatchCreate, create_batch(), create_movement(), create_product(), create_serial(), create_supplier(), delete_product() (+37 more)
+Nodes (45): AsyncClient, _auth(), BatchCreate, create_batch(), create_movement(), create_product(), create_serial(), create_supplier() (+37 more)
 
 ### Community 4 - "routes_module.py"
 Cohesion: 0.10
@@ -186,49 +188,49 @@ Nodes (38): _address_hash(), _build_waypoint(), cache_coords(), CacheCoordsItem,
 Cohesion: 0.11
 Nodes (35): BreadcrumbPoint, create_share_token(), current_session(), end_tracking(), get_breadcrumbs(), get_live_position(), get_tracking_config(), GPSUpdate (+27 more)
 
-### Community 6 - "form.jsx"
-Cohesion: 0.06
-Nodes (32): react, Carousel, CarouselContent, CarouselContext, CarouselItem, CarouselNext, CarouselPrevious, useCarousel() (+24 more)
+### Community 6 - "RoutesPage.js"
+Cohesion: 0.05
+Nodes (44): react, useCarousel(), Checkbox, FormControl, FormDescription, FormFieldContext, FormItem, FormItemContext (+36 more)
 
 ### Community 7 - "ServiceOrdersPage.js"
-Cohesion: 0.12
-Nodes (26): OrderDetailOverlay(), SignatureModal(), SignatureViewModal(), DropdownMenuContent, DropdownMenuItem, TabsContent, TabsList, TabsTrigger (+18 more)
+Cohesion: 0.15
+Nodes (21): OrderDetailOverlay(), TabsContent, TabsList, TabsTrigger, BRAND_LIST, BrandLogo(), GARANTIA_SUBTYPES, getBrandLogo() (+13 more)
 
-### Community 8 - "RoutesPage.js"
-Cohesion: 0.12
-Nodes (12): Checkbox, PopoverContent, Slider, supabase, EXCLUDED_STATUSES, GOOGLE_MAPS_LIBRARIES, IMPORTANT: do NOT depend on `orders` directly — its reference changes on, IMPORTANT: do NOT depend on `orders` — its reference changes on every (+4 more)
+### Community 8 - "InventoryPage.js"
+Cohesion: 0.14
+Nodes (8): DEFAULT_CATEGORIES, ENTRY_REASONS, EXIT_REASONS, InventoryPage(), PRODUCT_TYPES, SERIAL_STATUSES, TABS, UNITS
 
 ### Community 9 - "laudo_generator.py"
-Cohesion: 0.11
-Nodes (25): _decode_base64_image(), generate_laudo_from_template(), _get_month_name(), _make_blank_jpeg(), Laudo Generator - Template-based approach Opens the real DOCX template and…, Replace status cell text with clean formatting (white background, black text).…, Replace serial number in cell, targeting the bold run at the end., Replace image blob AND update content type to ensure JPEG compatibility. (+17 more)
+Cohesion: 0.10
+Nodes (27): _decode_base64_image(), generate_laudo_from_template(), generate_recall_laudo(), _get_month_name(), _make_blank_jpeg(), Laudo Generator - Template-based approach Opens the real DOCX template and…, Replace status cell text with clean formatting (white background, black text).…, Replace serial number in cell, targeting the bold run at the end. (+19 more)
 
 ### Community 10 - "TelecontrolScraper"
 Cohesion: 0.09
 Nodes (19): Script para rodar o sync do Telecontrol manualmente, cobrindo um período…, Run sync for both Hisense and HQ Telecontrol, Run sync periodically every SYNC_INTERVAL_MINUTES, run_sync(), scheduler(), extract_brand_from_description(), Internal sync implementation, Close browser instance safely (+11 more)
 
 ### Community 11 - "DashboardLayout.js"
-Cohesion: 0.19
-Nodes (10): DashboardLayout(), menuItems, NotificationsPanel(), Badge(), badgeVariants, Button, ScrollArea, ScrollBar (+2 more)
+Cohesion: 0.11
+Nodes (15): menuItems, NotificationsPanel(), DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioItem, DropdownMenuSeparator (+7 more)
 
 ### Community 12 - "App.js"
-Cohesion: 0.09
-Nodes (24): App(), AppRoutes(), ProtectedRoute(), PublicRoute(), Toaster(), AuthContext, AuthProvider(), failedQueue (+16 more)
+Cohesion: 0.11
+Nodes (20): App(), AppRoutes(), ProtectedRoute(), PublicRoute(), Toaster(), useAuth(), root, LabelTemplatesPage() (+12 more)
 
-### Community 13 - "InventoryPage.js"
-Cohesion: 0.10
-Nodes (21): LaudoModal(), PHOTO_LABELS, IMPORTANT: the OS PUT (step 2) is ADDITIVE — we only send a field if the, RECALL_PHOTO_LABELS, DialogContent, DialogDescription, DialogFooter(), DialogHeader() (+13 more)
+### Community 13 - "UsersPage.js"
+Cohesion: 0.16
+Nodes (12): LaudoModal(), PHOTO_LABELS, IMPORTANT: the OS PUT (step 2) is ADDITIVE — we only send a field if the, RECALL_PHOTO_LABELS, DialogContent, DialogDescription, DialogFooter(), DialogHeader() (+4 more)
 
 ### Community 14 - "post"
-Cohesion: 0.08
-Nodes (28): create_os_share_token(), fire_test_webhook(), get_photos_status(), increment_print_count(), migrate_fix_aguardando_status(), migrate_statuses(), OSShareTokenRequest, post (+20 more)
+Cohesion: 0.10
+Nodes (21): create_token(), fire_test_webhook(), get_photos_status(), increment_print_count(), migrate_fix_aguardando_status(), migrate_statuses(), post, Increment and return print count for an OS. (+13 more)
 
 ### Community 15 - "utils.js"
 Cohesion: 0.09
-Nodes (14): Avatar, AvatarFallback, AvatarImage, HoverCardContent, InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot (+6 more)
+Nodes (14): AccordionContent, AccordionItem, AccordionTrigger, HoverCardContent, InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot (+6 more)
 
 ### Community 16 - "BaseModel"
-Cohesion: 0.13
-Nodes (18): create_service_order(), create_token(), login(), LoginRequest, LoginResponse, Notification, BaseModel, Sign an OS with technician and client signatures (+10 more)
+Cohesion: 0.12
+Nodes (18): create_os_share_token(), create_service_order(), login(), LoginRequest, LoginResponse, Notification, OSShareTokenRequest, BaseModel (+10 more)
 
 ### Community 17 - "use-toast.js"
 Cohesion: 0.16
@@ -271,7 +273,7 @@ Cohesion: 0.15
 Nodes (8): create_external_os(), ExternalOS, Lightweight in-memory cache with TTL., OS received from external website/system, Send WhatsApp text message to Mastermaq office number., Create OS from external website/system. Uses the same numbering pattern as…, send_wa_notification(), SimpleCache
 
 ### Community 28 - "users_module.py"
-Cohesion: 0.21
+Cohesion: 0.19
 Nodes (11): hash_password(), BaseModel, Users module — RBAC (Admin vs Technician) with bcrypt password hashing.…, Register /api/users routes. Admin-only for write operations., Ensure the legacy/master admin exists and password matches env., seed_admin(), setup_users_routes(), UserCreate (+3 more)
 
 ### Community 29 - "assinafy_service.py"
@@ -279,12 +281,12 @@ Cohesion: 0.17
 Nodes (11): create_assignment(), create_signer(), generate_os_pdf(), get_document_status(), Assinafy Digital Signature Service Handles PDF generation and Assinafy API…, Upload a PDF document to Assinafy and return the document data, Create a signer in Assinafy, Create a virtual assignment for the document (+3 more)
 
 ### Community 30 - "ManuaisPage.js"
-Cohesion: 0.20
-Nodes (12): SelectContent, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, DEFAULT_BRANDS (+4 more)
+Cohesion: 0.21
+Nodes (13): DashboardLayout(), Badge(), badgeVariants, Button, Input, Label, labelVariants, PRESETS (+5 more)
 
-### Community 31 - "mark_all_notifications_read"
-Cohesion: 0.50
-Nodes (5): delete_service_order(), mark_all_notifications_read(), mark_notification_read(), delete, put
+### Community 31 - "update_service_order"
+Cohesion: 0.22
+Nodes (10): delete_service_order(), mark_all_notifications_read(), mark_notification_read(), delete, put, Save laudo draft data to database for persistence. ADDITIVE save: only fields…, save_laudo_data(), ServiceOrderUpdate (+2 more)
 
 ### Community 32 - "LoginPage.js"
 Cohesion: 0.33
@@ -306,9 +308,9 @@ Nodes (8): get_saudacao(), _get_shared_client(), APIRouter, AsyncClient, WhatsAp
 Cohesion: 0.31
 Nodes (8): clean_doc(), insert_batch(), main(), migrate_collection(), Migration script: MongoDB → Supabase (PostgreSQL via REST API) Exports all data…, Remove MongoDB _id and convert non-serializable types, Insert a batch of rows into Supabase via REST API, Migrate a MongoDB collection to a Supabase table
 
-### Community 37 - "startup_auto_sync"
-Cohesion: 0.22
-Nodes (9): _load_health_from_db(), Download Playwright chromium at runtime if missing. Cloud Build cannot fetch…, Auto-migrate on startup: source names and status normalization, Start background auto-sync loop for Telecontrol HISENSE only. HQ is NOT auto-…, shutdown_db_client(), startup_auto_sync(), startup_ensure_playwright_browser(), startup_migrate() (+1 more)
+### Community 37 - "_scraper_watchdog"
+Cohesion: 0.17
+Nodes (12): _load_health_from_db(), _persist_health(), Download Playwright chromium at runtime if missing. Cloud Build cannot fetch…, Auto-migrate on startup: source names and status normalization, Start background auto-sync loop for Telecontrol HISENSE only. HQ is NOT auto-…, Background task that flips a scraper to `down` when its last run is stale…, _scraper_watchdog(), shutdown_db_client() (+4 more)
 
 ### Community 38 - "alert-dialog.jsx"
 Cohesion: 0.22
@@ -330,9 +332,9 @@ Nodes (7): Breadcrumb, BreadcrumbEllipsis(), BreadcrumbItem, BreadcrumbLink, Bre
 Cohesion: 0.25
 Nodes (6): DrawerContent, DrawerDescription, DrawerFooter(), DrawerHeader(), DrawerOverlay, DrawerTitle
 
-### Community 43 - "dropdown-menu.jsx"
-Cohesion: 0.25
-Nodes (7): DropdownMenuCheckboxItem, DropdownMenuLabel, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuShortcut(), DropdownMenuSubContent, DropdownMenuSubTrigger
+### Community 43 - "carousel.jsx"
+Cohesion: 0.29
+Nodes (6): Carousel, CarouselContent, CarouselContext, CarouselItem, CarouselNext, CarouselPrevious
 
 ### Community 44 - "navigation-menu.jsx"
 Cohesion: 0.25
@@ -344,7 +346,7 @@ Nodes (7): SheetContent, SheetDescription, SheetFooter(), SheetHeader(), SheetOv
 
 ### Community 46 - "label_templates_module.py"
 Cohesion: 0.33
-Nodes (5): LabelTemplate, LabelTemplateIn, BaseModel, Label Templates module — CRUD para templates de adesivos térmicos. Armazena…, setup_label_templates_routes()
+Nodes (4): LabelTemplate, LabelTemplateIn, BaseModel, Label Templates module — CRUD para templates de adesivos térmicos. Armazena…
 
 ### Community 47 - "migrate_to_new_supabase.py"
 Cohesion: 0.38
@@ -374,9 +376,9 @@ Nodes (5): compilerOptions, baseUrl, paths, include, src
 Cohesion: 0.47
 Nodes (5): formatBytes(), formatDuration(), os, SERVER_START_TIME, setupHealthEndpoints()
 
-### Community 55 - "generate_laudo_word"
+### Community 55 - "get_alerts_summary"
 Cohesion: 0.40
-Nodes (5): generate_recall_laudo(), Generate a Recall inspection laudo DOCX programmatically., generate_laudo_word(), LaudoData, Generate laudo DOCX by filling the template and save to history
+Nodes (5): get_alerts_summary(), _parse_os_date(), Aceita os formatos de data usados em service_orders., Alertas que devem tocar a campainha e acender o badge do cabeçalho., _tc_label()
 
 ### Community 56 - "alert.jsx"
 Cohesion: 0.40
@@ -398,9 +400,9 @@ Nodes (3): CacheHeaderMiddleware, Cache policy: - Live data (service-orders, rou
 Cohesion: 0.50
 Nodes (3): config, path, webpackConfig
 
-### Community 62 - "accordion.jsx"
-Cohesion: 0.50
-Nodes (3): AccordionContent, AccordionItem, AccordionTrigger
+### Community 62 - "AuthContext.js"
+Cohesion: 0.40
+Nodes (3): AuthContext, AuthProvider(), failedQueue
 
 ### Community 63 - "Learn More"
 Cohesion: 0.14
@@ -408,34 +410,38 @@ Nodes (13): Advanced Configuration, Analyzing the Bundle Size, Available Scripts
 
 ### Community 69 - "dependencies"
 Cohesion: 0.13
-Nodes (15): cra-template, dependencies, cra-template, next-themes, @radix-ui/react-popover, @radix-ui/react-slider, @radix-ui/react-toggle, react-dom (+7 more)
+Nodes (15): cra-template, dependencies, cra-template, @radix-ui/react-popover, @radix-ui/react-slider, @radix-ui/react-toggle, react-dom, react-hook-form (+7 more)
 
 ### Community 76 - "force_resync"
-Cohesion: 0.18
-Nodes (11): force_resync(), _persist_health(), Run sync for both Hisense and HQ in parallel. Parallel execution ensures the HQ…, Force a catch-up resync for a specific scraper (Hisense or HQ)., Background task that flips a scraper to `down` when its last run is stale…, Run scraper sync, update health metrics, and trigger auto-resync on recovery.…, run_background_sync(), _run_sync_with_health() (+3 more)
+Cohesion: 0.25
+Nodes (8): force_resync(), Run sync for both Hisense and HQ in parallel. Parallel execution ensures the HQ…, Force a catch-up resync for a specific scraper (Hisense or HQ)., Run scraper sync, update health metrics, and trigger auto-resync on recovery.…, run_background_sync(), _run_sync_with_health(), trigger_telecontrol_sync(), BackgroundTasks
 
 ### Community 90 - "Sessão atual (20-31/07/2026)"
 Cohesion: 0.18
 Nodes (10): 1. Migração do repositório (20/07), 2. Bug "Dados para Laudo apagam de um dia pro outro" (20/07), 3. Bug "somente 1ª imagem em todas" no laudo DOCX (21-31/07), 4. Scraper Telecontrol blindado (31/07), 5. Bug "fotos apagam ao reabrir OS" (31/07), Ambientes, Backlog, PRD — Mastermaq / Maq-Sync-Hub (+2 more)
 
+### Community 106 - "avatar.jsx"
+Cohesion: 0.50
+Nodes (3): Avatar, AvatarFallback, AvatarImage
+
 ## Knowledge Gaps
-- **314 isolated node(s):** `dispatch_webhook.sh script`, `watch_crons.sh script`, `webhook_crond.sh script`, `$schema`, `style` (+309 more)
+- **314 isolated node(s):** `menuItems`, `DEFAULT_CATEGORIES`, `UNITS`, `SERIAL_STATUSES`, `ENTRY_REASONS` (+309 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **53 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **54 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `dependencies` connect `dependencies` to `devDependencies`, `form.jsx`, `printingService.js`, `date-fns`, `axios`, `class-variance-authority`, `clsx`, `cmdk`, `embla-carousel-react`, `@hookform/resolvers`, `html2pdf.js`, `input-otp`, `mammoth`, `@radix-ui/react-accordion`, `@radix-ui/react-alert-dialog`, `@radix-ui/react-aspect-ratio`, `@radix-ui/react-avatar`, `@radix-ui/react-checkbox`, `@radix-ui/react-collapsible`, `@radix-ui/react-context-menu`, `@radix-ui/react-dialog`, `@radix-ui/react-dropdown-menu`, `@radix-ui/react-hover-card`, `@radix-ui/react-label`, `@radix-ui/react-menubar`, `@radix-ui/react-navigation-menu`, `@radix-ui/react-progress`, `@radix-ui/react-radio-group`, `@radix-ui/react-scroll-area`, `@radix-ui/react-select`, `@radix-ui/react-separator`, `fabric`, `@radix-ui/react-slot`, `@radix-ui/react-switch`, `lucide-react`, `@radix-ui/react-toggle-group`, `@radix-ui/react-tooltip`, `@radix-ui/react-tabs`, `@react-google-maps/api`, `@radix-ui/react-toast`, `react-resizable-panels`, `react-router-dom`, `react-scripts`, `recharts`, `@supabase/supabase-js`, `tailwind-merge`, `tailwindcss-animate`, `vaul`, `zod`, `react-day-picker`, `sonner`?**
-  _High betweenness centrality (0.091) - this node is a cross-community bridge._
-- **Why does `react` connect `form.jsx` to `use-toast.js`, `DashboardLayout.js`, `dependencies`?**
-  _High betweenness centrality (0.071) - this node is a cross-community bridge._
-- **Why does `cn()` connect `cn` to `form.jsx`, `ServiceOrdersPage.js`, `RoutesPage.js`, `DashboardLayout.js`, `InventoryPage.js`, `utils.js`, `use-toast.js`, `menubar.jsx`, `ManuaisPage.js`, `LoginPage.js`, `command.jsx`, `context-menu.jsx`, `alert-dialog.jsx`, `table.jsx`, `breadcrumb.jsx`, `drawer.jsx`, `dropdown-menu.jsx`, `navigation-menu.jsx`, `sheet.jsx`, `toggle-group.jsx`, `alert.jsx`, `accordion.jsx`?**
-  _High betweenness centrality (0.042) - this node is a cross-community bridge._
-- **What connects `dispatch_webhook.sh script`, `watch_crons.sh script`, `webhook_crond.sh script` to the rest of the system?**
+- **Why does `dependencies` connect `dependencies` to `devDependencies`, `RoutesPage.js`, `printingService.js`, `date-fns`, `axios`, `class-variance-authority`, `clsx`, `cmdk`, `embla-carousel-react`, `@hookform/resolvers`, `html2pdf.js`, `input-otp`, `mammoth`, `@radix-ui/react-accordion`, `@radix-ui/react-alert-dialog`, `@radix-ui/react-aspect-ratio`, `@radix-ui/react-avatar`, `@radix-ui/react-checkbox`, `@radix-ui/react-collapsible`, `@radix-ui/react-context-menu`, `@radix-ui/react-dialog`, `@radix-ui/react-dropdown-menu`, `@radix-ui/react-hover-card`, `@radix-ui/react-label`, `@radix-ui/react-menubar`, `@radix-ui/react-navigation-menu`, `@radix-ui/react-progress`, `@radix-ui/react-radio-group`, `@radix-ui/react-scroll-area`, `@radix-ui/react-select`, `@radix-ui/react-separator`, `fabric`, `@radix-ui/react-slot`, `@radix-ui/react-switch`, `lucide-react`, `@radix-ui/react-toggle-group`, `@radix-ui/react-tooltip`, `@radix-ui/react-tabs`, `@react-google-maps/api`, `@radix-ui/react-toast`, `react-resizable-panels`, `react-scripts`, `recharts`, `@supabase/supabase-js`, `tailwind-merge`, `tailwindcss-animate`, `vaul`, `zod`, `react-day-picker`, `sonner`, `next-themes`?**
+  _High betweenness centrality (0.075) - this node is a cross-community bridge._
+- **Why does `react` connect `RoutesPage.js` to `use-toast.js`, `dependencies`?**
+  _High betweenness centrality (0.048) - this node is a cross-community bridge._
+- **Why does `cn()` connect `cn` to `RoutesPage.js`, `ServiceOrdersPage.js`, `DashboardLayout.js`, `UsersPage.js`, `utils.js`, `use-toast.js`, `menubar.jsx`, `ManuaisPage.js`, `LoginPage.js`, `command.jsx`, `context-menu.jsx`, `alert-dialog.jsx`, `table.jsx`, `breadcrumb.jsx`, `drawer.jsx`, `carousel.jsx`, `navigation-menu.jsx`, `sheet.jsx`, `toggle-group.jsx`, `alert.jsx`, `avatar.jsx`?**
+  _High betweenness centrality (0.039) - this node is a cross-community bridge._
+- **What connects `menuItems`, `DEFAULT_CATEGORIES`, `UNITS` to the rest of the system?**
   _314 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `server.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.04144144144144144 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.041836356904850054 - nodes in this community are weakly interconnected._
 - **Should `devDependencies` be split into smaller, more focused modules?**
   _Cohesion score 0.0425531914893617 - nodes in this community are weakly interconnected._
 - **Should `SupabaseCollection` be split into smaller, more focused modules?**
