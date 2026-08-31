@@ -100,13 +100,48 @@ Cenário: o técnico está no cliente, mas o cliente não está presente (ou o t
   4. Abre `wa.me` em nova aba
   5. Mostra card verde "Link enviado" com URL + botão "Copiar" + botão "Fechar (aguardando cliente assinar)"
 
-**Testado**:
-- `POST /signature-link` gerando token e URL absoluta corretos
-- `GET /public/sign/{token}` retornando dados da OS sem info sensível
-- `POST /submit` persistindo assinatura → OS ganha `signature_client`, `signature_technician`, `signature_date`
-- Re-submit no mesmo token → 410 "Link já utilizado"
-- Modal do técnico: fluxo Step 1 → Step 2 (assina) → Step 3 (clica "Enviar link") → wa.me abriu com telefone e mensagem prontos
-- Página pública mobile 428×926: layout perfeito, canvas responsivo, tela de sucesso profissional
+## Sessão 30/08/2026 (parte 3) — Fix urgente: HTTP 520 em produção após deploy
+
+## Sessão 31/08/2026 — Fixes: link duplicado + fluxo cliente-primeiro
+
+### 11. Bug: mensagem WhatsApp com URL duplicada (`https://.../https://.../sign/...`)
+- **Causa**: no `SignatureModal.js`, o `handleSendLink` fazia 2 regex sucessivos sobre a mensagem retornada pelo backend. O 1º substituía uma URL absoluta correta pela mesma URL absoluta. O 2º substituía o path `/sign/<token>` (que ainda existia no resultado) pela URL ABSOLUTA — criando concatenação `https://mastermaq-system.onlinehttps://mastermaq-system.online/sign/...`.
+- **Fix**: reconstruir a mensagem inteira do zero no frontend usando `window.location.origin + token + order.customer_name + order.product + order.phone1`. Backend continua devolvendo `url` e `whatsapp_url`, mas o frontend agora IGNORA e monta do zero — comportamento 100% previsível.
+
+### 12. Feature: fluxo "cliente assina primeiro, técnico completa depois"
+Antes: `technician_signature` era OBRIGATÓRIO no `POST /signature-link` — o técnico precisava assinar ANTES de enviar o link. Depois do fix:
+
+**Backend (`server.py`)**:
+- `SignatureLinkCreate.technician_signature: Optional[str]` — aceita `null`.
+- `POST /public/sign/{token}/submit`: quando o link NÃO tinha `technician_signature`, persiste SOMENTE `signature_client` + CPF na OS. Retorna `fully_signed: false`. Assinafy NÃO é disparado.
+- `POST /service-orders/{os}/sign`: `signature_technician` e `signature_client` viraram opcionais. Só bloqueia (400) se as duas JÁ existem. Faz update parcial — pode receber só a parte do técnico e mesclar com o cliente já salvo. Assinafy dispara automaticamente quando as duas ficam presentes.
+- `GET /service-orders/{os}/signatures` agora retorna também `signature_client_name`, `signature_client_cpf`, `signature_tech_name`.
+
+**Frontend (`SignatureModal.js`)**:
+- Novo `useEffect` no `open` que faz `GET /signatures` e detecta o estado parcial (`existingClientSig` / `existingTechSig`).
+- Novo modo **"completion"** — quando a OS tem só `signature_client`, o modal renderiza uma UI compacta:
+  * Header: "Completar Assinatura — OS #####"
+  * Card verde "Cliente já assinou" com **CPF exibido** e preview da assinatura
+  * Input "Técnico *" (nome)
+  * Canvas OU pill "Assinatura salva encontrada" (se `localStorage` tem sig do técnico) + "Refazer"
+  * Botão "Confirmar" que chama `/sign` com só a parte do técnico → OS fica totalmente assinada
+- Novo botão **"Enviar link para o cliente"** no Step 1 — permite enviar sem que o técnico assine antes (fluxo cliente-primeiro). Habilitado só quando o nome do cliente está preenchido.
+- Preserva fluxo tradicional: se o técnico assina primeiro em Step 2 e envia o link em Step 3, o link carrega a assinatura do técnico e o submit do cliente já finaliza a OS.
+
+**Testado end-to-end**:
+- Link SEM tech sig → cliente submit → `fully_signed=false` → só client no /signatures
+- Reabrir modal → completion mode com CPF e preview corretos
+- `/sign` com só tech → OS completa (ambas assinaturas presentes) → 400 no re-submit
+- Assinafy dispara só quando ambas ficam presentes
+- **Sintoma**: após deploy, `POST /api/auth/login` em `mastermaq-system.online` retornava HTTP 520 imediato. Usuários não conseguiam logar.
+- **RCA (deployer agent)**: backend saudável e ready no cluster, ZERO POST de login chegava ao uvicorn. Causa: loop de auto-sync Hisense lançava Playwright/chromium a cada 30 min → OOM-kill sob o tier_0 de 512Mi → conexões TCP recusadas/resetadas → Cloudflare devolvia 520 antes do request chegar no origin. `consecutive_failures: 367` no scraper Hisense com erros `spawn ETXTBSY` e `Executable doesn't exist`.
+- **Fix aplicado em `server.py`**:
+  * `startup_auto_sync()` agora respeita ENV `HISENSE_AUTO_SYNC_ENABLED` (default: `false`). Loop e watchdog só sobem se `=true`.
+  * Quando desabilitado, o status Hisense é resetado para `"manual"` (novo estado — não dispara `down`/`warning` no `/api/scrapers/health`) e `consecutive_failures=0`. Badge do dashboard fica limpo.
+  * `_load_health_from_db()` agora roda `await` (não `create_task`) ANTES do reset, para não sobrescrever depois.
+  * Botão "Sincronizar" no painel continua funcionando (dispara `POST /api/telecontrol/sync` isolado, sem loop).
+- **Testado local**: login `HTTP 200 in 0.459s`, health `overall: ok`, Hisense `status: manual`, HQ continua rodando normal.
+- **Ação pendente do usuário**: redeploy para propagar o fix a produção. Após redeploy, se ainda quiser rodar auto-sync em preview, definir `HISENSE_AUTO_SYNC_ENABLED=true` em `backend/.env`.
 
 ## Stack
 - Frontend: React 19 (CRA + Craco), Tailwind, Shadcn/UI, lucide-react, axios, react-router 6

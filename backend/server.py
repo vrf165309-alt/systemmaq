@@ -259,16 +259,33 @@ async def startup_migrate():
 @app.on_event("startup")
 async def startup_auto_sync():
     """Start background auto-sync loop for Telecontrol HISENSE only.
-    
+
     HQ is NOT auto-synced — it runs only on manual trigger via the
     "Sincronizar" button (POST /api/telecontrol/sync).
-    
+
+    ⚠️  HISENSE auto-sync is now GATED by env `HISENSE_AUTO_SYNC_ENABLED`
+        (default: "false" — desligado). Motivo: em produção tier_0 (512Mi)
+        o loop lançava Playwright/chromium a cada 30 min e causava
+        pressão de memória → OOM-kill do chromium → conexões TCP resetadas
+        → Cloudflare devolvia HTTP 520 no login. Diagnóstico do RCA
+        `deployer-agent-docs/RCA_f694aa85-*.MD` (30/08/2026).
+
+        Para religar em preview/dev, defina no `.env`:
+            HISENSE_AUTO_SYNC_ENABLED=true
+
+        Em produção, mantenha desligado e use o botão "Sincronizar" no
+        painel para puxar manualmente (mesmo fluxo do HQ). O botão dispara
+        `POST /api/telecontrol/sync` que roda em background e é isolado
+        (não fica em loop consumindo memória).
+
     Tracks scraper health: each source has a consecutive_failures counter.
     When >= 2, scraper is considered DOWN and surfaced via /api/scrapers/health.
     On recovery (next successful run), an auto-resync of last 60 days runs to
     capture OSs missed during the outage.
     """
     import asyncio
+
+    hisense_auto = os.environ.get("HISENSE_AUTO_SYNC_ENABLED", "false").strip().lower() in {"1", "true", "yes", "y"}
 
     async def hisense_loop():
         interval = int(os.environ.get('SYNC_INTERVAL_MINUTES', 10))
@@ -288,15 +305,30 @@ async def startup_auto_sync():
                 logger.error(f"Hisense sync loop error: {e}")
             await asyncio.sleep(interval * 60)
 
-    asyncio.create_task(hisense_loop())
-    # Load persisted scraper health on boot
-    asyncio.create_task(_load_health_from_db())
-    # Watchdog: independently checks whether the scheduler is producing
-    # sync runs on schedule. If NO sync of a given source has happened in
-    # the last 3× SYNC_INTERVAL_MINUTES, we mark it as stalled so the
-    # header badge lights up. Covers the case where the loop itself dies
-    # or is stuck — not just a single failed cycle.
-    asyncio.create_task(_scraper_watchdog())
+    # Load persisted scraper health on boot (independe do loop, só mantém badge coerente)
+    # Deve rodar ANTES de setar "manual" para não sobrescrever depois.
+    await _load_health_from_db()
+
+    if hisense_auto:
+        asyncio.create_task(hisense_loop())
+        # Watchdog só faz sentido se o loop está ativo.
+        asyncio.create_task(_scraper_watchdog())
+    else:
+        logger.info(
+            "Hisense auto-sync DISABLED (HISENSE_AUTO_SYNC_ENABLED=false). "
+            "Use o botão 'Sincronizar' no painel para puxar manualmente."
+        )
+        # Zera o status para o badge parar de indicar "down" — o loop foi
+        # desligado por decisão operacional, não por falha do scraper.
+        SCRAPER_HEALTH["hisense"].update({
+            "status": "manual",
+            "consecutive_failures": 0,
+            "last_error": None,
+        })
+        try:
+            await _persist_health("hisense")
+        except Exception:  # noqa: BLE001
+            pass
 
 
 async def _scraper_watchdog():
@@ -1837,41 +1869,57 @@ async def get_customer_history(os_number: str, _: dict = Depends(verify_token)):
     return {"history": history}
 
 class SignRequest(BaseModel):
-    signature_technician: str
-    signature_client: str
+    # Ambos opcionais para suportar "completar" — o modal pode enviar
+    # somente a assinatura do técnico quando o cliente já assinou por link.
+    signature_technician: Optional[str] = None
+    signature_client: Optional[str] = None
     signature_client_name: Optional[str] = None
     signature_client_cpf: Optional[str] = None
     signature_tech_name: Optional[str] = None
 
 @api_router.post("/service-orders/{os_number}/sign")
 async def sign_service_order(os_number: str, sign_data: SignRequest, background_tasks: BackgroundTasks, _: dict = Depends(verify_token)):
-    """Sign an OS with technician and client signatures"""
+    """Sign an OS with technician and/or client signatures.
+
+    Aceita três cenários:
+      1. Fluxo completo: recebe as duas assinaturas → persiste ambas + Assinafy.
+      2. Completar tech: cliente já assinou via link → recebe só a assinatura
+         do técnico → persiste + dispara Assinafy (agora está completa).
+      3. Completar cliente: técnico já assinou → recebe só o cliente → idem.
+    """
     from assinafy_service import generate_os_pdf, upload_document_to_assinafy, create_signer, create_assignment
-    
+
     order = await db.service_orders.find_one({"os_number": os_number}, {"_id": 0})
     if not order:
         raise HTTPException(status_code=404, detail="OS não encontrada")
-    
+
+    # Só barra se JÁ tem as duas. Caso contrário permite o completion.
     if order.get("signature_technician") and order.get("signature_client"):
         raise HTTPException(status_code=400, detail="OS já foi assinada")
-    
+
     now = datetime.now(timezone.utc).isoformat()
-    
-    # Update OS with signatures (keep current status)
-    update_data = {
-        "signature_technician": sign_data.signature_technician,
-        "signature_client": sign_data.signature_client,
-        "signature_client_name": sign_data.signature_client_name or "",
-        "signature_client_cpf": sign_data.signature_client_cpf or "",
-        "signature_tech_name": sign_data.signature_tech_name or "",
-        "signature_date": now,
-        "updated_at": now
-    }
-    
+
+    # Constrói update parcial — mantém o que já existe intacto.
+    update_data = {"updated_at": now, "signature_date": now}
+    if sign_data.signature_technician:
+        update_data["signature_technician"] = sign_data.signature_technician
+    if sign_data.signature_client:
+        update_data["signature_client"] = sign_data.signature_client
+    if sign_data.signature_client_name:
+        update_data["signature_client_name"] = sign_data.signature_client_name
+    if sign_data.signature_client_cpf:
+        update_data["signature_client_cpf"] = sign_data.signature_client_cpf
+    if sign_data.signature_tech_name:
+        update_data["signature_tech_name"] = sign_data.signature_tech_name
+
+    # Estado final (considerando o que veio no request + o que já estava)
+    final_tech = sign_data.signature_technician or order.get("signature_technician")
+    final_client = sign_data.signature_client or order.get("signature_client")
+
     # Create notification for signature (no status change)
     old_status = order.get("status")
     notification = Notification(
-        message=f"OS {os_number} assinada pelo cliente (status mantido: '{old_status}')",
+        message=f"OS {os_number} assinada (status mantido: '{old_status}')",
         os_number=os_number,
         old_status=old_status,
         new_status=old_status
@@ -1908,10 +1956,16 @@ async def sign_service_order(os_number: str, sign_data: SignRequest, background_
                 {"$set": {"assinafy_status": f"error: {str(e)[:200]}"}}
             )
     
-    background_tasks.add_task(assinafy_background, os_number, order, sign_data.signature_technician, sign_data.signature_client)
-    
+    # Só dispara Assinafy quando a OS está totalmente assinada (as duas
+    # assinaturas presentes). Se ainda falta uma, aguarda a próxima
+    # chamada de sign (com a parte faltante) pra gerar o PDF completo.
+    if final_tech and final_client:
+        # Precisa mergear o update_data no order pra o PDF ter os dados frescos
+        order_for_pdf = {**order, **update_data}
+        background_tasks.add_task(assinafy_background, os_number, order_for_pdf, final_tech, final_client)
+
     await db.service_orders.update_one({"os_number": os_number}, {"$set": update_data})
-    
+
     updated = await db.service_orders.find_one({"os_number": os_number}, {"_id": 0})
     return updated
 
@@ -1920,19 +1974,23 @@ async def get_signatures(os_number: str, _: dict = Depends(verify_token)):
     """Get signature data for an OS"""
     order = await db.service_orders.find_one(
         {"os_number": os_number},
-        {"_id": 0, "signature_technician": 1, "signature_client": 1, "signature_date": 1, 
+        {"_id": 0, "signature_technician": 1, "signature_client": 1, "signature_date": 1,
+         "signature_client_name": 1, "signature_client_cpf": 1, "signature_tech_name": 1,
          "assinafy_document_id": 1, "assinafy_status": 1, "customer_name": 1, "technician": 1,
          "os_number": 1, "product": 1, "brand": 1, "model": 1, "registration_date": 1,
          "service_type": 1, "reported_defect": 1, "technical_diagnosis": 1, "status": 1}
     )
     if not order:
         raise HTTPException(status_code=404, detail="OS não encontrada")
-    
+
     has_signatures = bool(order.get("signature_technician") and order.get("signature_client"))
     return {
         "signed": has_signatures,
         "signature_technician": order.get("signature_technician"),
         "signature_client": order.get("signature_client"),
+        "signature_client_name": order.get("signature_client_name"),
+        "signature_client_cpf": order.get("signature_client_cpf"),
+        "signature_tech_name": order.get("signature_tech_name"),
         "signature_date": order.get("signature_date"),
         "assinafy_document_id": order.get("assinafy_document_id"),
         "assinafy_status": order.get("assinafy_status"),
@@ -1976,8 +2034,12 @@ async def get_signatures(os_number: str, _: dict = Depends(verify_token)):
 signature_links_col = mongo_db["signature_links"]
 
 class SignatureLinkCreate(BaseModel):
-    technician_signature: str  # dataURL png
-    technician_name: str
+    # technician_signature agora é OPCIONAL — permite o fluxo "cliente
+    # assina primeiro, técnico assina depois". Se ausente, quando o cliente
+    # submeter pelo link, apenas a assinatura do cliente é persistida na
+    # OS; o técnico completa depois reabrindo o SignatureModal.
+    technician_signature: Optional[str] = None
+    technician_name: Optional[str] = None
     client_name: Optional[str] = None
     client_cpf: Optional[str] = None
 
@@ -1999,8 +2061,10 @@ async def create_signature_link(
         raise HTTPException(status_code=404, detail="OS não encontrada")
     if order.get("signature_client"):
         raise HTTPException(status_code=400, detail="OS já foi assinada pelo cliente")
-    if not body.technician_signature or not body.technician_signature.startswith("data:image"):
-        raise HTTPException(status_code=400, detail="Assinatura do técnico ausente")
+    # Se veio a assinatura do técnico, deve ser um dataURL válido; caso
+    # contrário aceita None (fluxo "cliente assina primeiro").
+    if body.technician_signature and not body.technician_signature.startswith("data:image"):
+        raise HTTPException(status_code=400, detail="Assinatura do técnico inválida")
 
     token = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
@@ -2142,18 +2206,27 @@ async def public_signature_submit(token: str, body: PublicSignSubmit, background
 
     now = datetime.now(timezone.utc).isoformat()
     update_data = {
-        "signature_technician": link["technician_signature"],
         "signature_client": body.signature_client,
         "signature_client_name": link.get("client_name_hint") or order.get("customer_name") or "",
         "signature_client_cpf": (body.client_cpf or link.get("client_cpf_hint") or "").strip(),
-        "signature_tech_name": link.get("technician_name") or "",
         "signature_date": now,
         "updated_at": now,
     }
+    # Se o link foi criado JÁ com a assinatura do técnico, persiste as duas
+    # de uma vez (fluxo tradicional). Caso contrário só persiste o cliente
+    # e a OS fica em estado "parcial" — o técnico completa reabrindo o modal.
+    link_tech_sig = link.get("technician_signature")
+    link_tech_name = link.get("technician_name")
+    fully_signed = bool(link_tech_sig)
+    if link_tech_sig:
+        update_data["signature_technician"] = link_tech_sig
+    if link_tech_name:
+        update_data["signature_tech_name"] = link_tech_name
 
     old_status = order.get("status")
+    who = "cliente" if not fully_signed else "cliente e técnico"
     notification = Notification(
-        message=f"OS {os_number} assinada pelo cliente via link (status mantido: '{old_status}')",
+        message=f"OS {os_number} assinada pelo {who} via link (status mantido: '{old_status}')",
         os_number=os_number,
         old_status=old_status,
         new_status=old_status,
@@ -2182,11 +2255,14 @@ async def public_signature_submit(token: str, body: PublicSignSubmit, background
                 {"$set": {"assinafy_status": f"error: {str(e)[:200]}"}}
             )
 
-    background_tasks.add_task(assinafy_background, os_number, order, link["technician_signature"], body.signature_client)
+    # Só dispara o pipeline Assinafy quando a OS está totalmente assinada.
+    # Se só o cliente assinou, aguarda o técnico completar pra gerar o PDF.
+    if fully_signed:
+        background_tasks.add_task(assinafy_background, os_number, order, link_tech_sig, body.signature_client)
     await db.service_orders.update_one({"os_number": os_number}, {"$set": update_data})
     await signature_links_col.update_one({"token": token}, {"$set": {"status": "used", "used_at": now}})
 
-    return {"success": True, "os_number": os_number}
+    return {"success": True, "os_number": os_number, "fully_signed": fully_signed}
 
 @api_router.get("/service-orders/{os_number}")
 async def get_service_order(os_number: str, include_photos: bool = False, payload: dict = Depends(verify_token)):

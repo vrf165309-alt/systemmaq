@@ -123,6 +123,13 @@ const SignatureModal = ({ open, onClose, order, onSigned, getAuthHeader, isOverl
   const [error, setError] = useState(null);
   const [linkSending, setLinkSending] = useState(false);
   const [linkSent, setLinkSent] = useState(null); // { url, whatsapp_url }
+  // Estado pré-existente na OS (quando o cliente já assinou por link mas o
+  // técnico ainda não completou). Carregado no open via GET /signatures.
+  const [existingClientSig, setExistingClientSig] = useState(null);
+  const [existingClientCpf, setExistingClientCpf] = useState('');
+  const [existingTechSig, setExistingTechSig] = useState(null);
+  const [existingTechName, setExistingTechName] = useState('');
+  const [preloading, setPreloading] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -137,8 +144,36 @@ const SignatureModal = ({ open, onClose, order, onSigned, getAuthHeader, isOverl
       setSavedTechSig(null);
       setLinkSent(null);
       setLinkSending(false);
+      setExistingClientSig(null);
+      setExistingClientCpf('');
+      setExistingTechSig(null);
+      setExistingTechName('');
+
+      // Detecta estado parcial (cliente já assinou por link mas técnico não):
+      // busca /signatures e ajusta o fluxo do modal.
+      setPreloading(true);
+      fetch(`${API}/api/service-orders/${order?.os_number}/signatures`, {
+        headers: getAuthHeader().headers,
+      })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (!data) return;
+          if (data.signature_client) {
+            setExistingClientSig(data.signature_client);
+            setExistingClientCpf(data.signature_client_cpf || '');
+            setClientCpf(data.signature_client_cpf || '');
+            setClientName(data.signature_client_name || order?.customer_name || '');
+          }
+          if (data.signature_technician) {
+            setExistingTechSig(data.signature_technician);
+            setExistingTechName(data.signature_tech_name || '');
+            if (data.signature_tech_name) setTechName(data.signature_tech_name);
+          }
+        })
+        .catch(() => {})
+        .finally(() => setPreloading(false));
     }
-  }, [open, order]);
+  }, [open, order, API, getAuthHeader]);
 
   // Update saved sig when tech name changes
   useEffect(() => {
@@ -216,14 +251,9 @@ const SignatureModal = ({ open, onClose, order, onSigned, getAuthHeader, isOverl
   }, [API, order, sigTech, clientName, clientCpf, getAuthHeader, onSigned, onClose]);
 
   // ─── Enviar link ao cliente por WhatsApp ─────────────────────────
-  // Gera um token único no backend com a assinatura do técnico já
-  // capturada e abre o WhatsApp do cliente com uma mensagem pronta
-  // contendo o link. O cliente assina pelo próprio celular.
+  // Aceita ser chamado com ou sem assinatura do técnico. Sem tech, o
+  // cliente assina primeiro pelo link e o técnico completa depois.
   const handleSendLink = useCallback(async () => {
-    if (!sigTech) {
-      setError('Assinatura do técnico é necessária antes de enviar o link.');
-      return;
-    }
     setLinkSending(true);
     setError(null);
     try {
@@ -231,10 +261,10 @@ const SignatureModal = ({ open, onClose, order, onSigned, getAuthHeader, isOverl
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeader().headers },
         body: JSON.stringify({
-          technician_signature: sigTech,
-          technician_name: techName.trim(),
-          client_name: clientName.trim(),
-          client_cpf: clientCpf.trim(),
+          technician_signature: sigTech || null,
+          technician_name: techName.trim() || null,
+          client_name: clientName.trim() || null,
+          client_cpf: clientCpf.trim() || null,
         })
       });
       if (!resp.ok) {
@@ -242,24 +272,29 @@ const SignatureModal = ({ open, onClose, order, onSigned, getAuthHeader, isOverl
         throw new Error(err.detail || 'Erro ao gerar link');
       }
       const data = await resp.json();
-      // Sempre reconstruir a URL usando o origin que o cliente ESTÁ vendo
-      // — o backend pode devolver o host do cluster interno se o header
-      // Origin da chamada não bater com o domínio público.
+      // Reconstruir tudo do zero no frontend — evita bugs de concatenação
+      // do lado do backend (regex antigo tentava re-substituir a URL e
+      // gerou dupla concatenação "https://.../https://.../sign/...").
       const absoluteUrl = `${window.location.origin}/sign/${data.token}`;
-      let whatsUrl = data.whatsapp_url || '';
-      if (whatsUrl) {
-        // Substitui QUALQUER URL de /sign/${token} pela absoluta correta
-        // (a mensagem do wa.me pode ter o valor errado embutido).
-        try {
-          const u = new URL(whatsUrl);
-          const text = u.searchParams.get('text') || '';
-          // Regex substitui qualquer URL até /sign/<token>
-          const fixed = text.replace(/https?:\/\/[^\s]*\/sign\/[a-f0-9-]+/gi, absoluteUrl)
-                            .replace(/\/sign\/[a-f0-9-]+/gi, absoluteUrl);
-          u.searchParams.set('text', fixed);
-          whatsUrl = u.toString();
-        } catch (_) { /* fallback: uso da URL bruta */ }
-      }
+      const firstName = (order?.customer_name || '').trim().split(/\s+/)[0] || 'cliente';
+      const productDesc = order?.product || 'sua ordem de serviço';
+      const messageLines = [
+        `Olá ${firstName}! Aqui é da Mastermaq Assistência Técnica.`,
+        '',
+        `Para concluir a OS #${order?.os_number} do seu ${productDesc}, assine no link abaixo pelo seu próprio celular:`,
+        '',
+        absoluteUrl,
+        '',
+        'O link é único e expira em 7 dias. Qualquer dúvida, é só responder por aqui.',
+      ];
+      const message = messageLines.join('\n');
+      // Normaliza telefone com DDI 55 se necessário
+      const rawPhone = (order?.phone1 || '').toString();
+      const digits = rawPhone.replace(/\D/g, '');
+      const phoneNormalized = digits && !digits.startsWith('55') ? `55${digits}` : digits;
+      const whatsUrl = phoneNormalized
+        ? `https://wa.me/${phoneNormalized}?text=${encodeURIComponent(message)}`
+        : `https://wa.me/?text=${encodeURIComponent(message)}`;
       setLinkSent({ url: absoluteUrl, whatsapp_url: whatsUrl });
       // Abre o WhatsApp em nova aba
       if (whatsUrl) window.open(whatsUrl, '_blank', 'noopener,noreferrer');
@@ -270,7 +305,157 @@ const SignatureModal = ({ open, onClose, order, onSigned, getAuthHeader, isOverl
     }
   }, [API, order, sigTech, techName, clientName, clientCpf, getAuthHeader]);
 
+  // ─── Completar assinatura do técnico (cliente já assinou por link) ─
+  // Envia SOMENTE a parte do técnico ao endpoint /sign — o backend
+  // mescla com a assinatura do cliente já persistida na OS e dispara
+  // o Assinafy quando ambas estão presentes.
+  const handleCompleteTechConfirm = useCallback(async (techSigDataUrl) => {
+    if (!techName.trim()) {
+      setError('Nome do técnico é obrigatório');
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      // Salva no localStorage para reuso futuro
+      const key = `mastermaq_tech_sig_${techName.trim().toLowerCase()}`;
+      try { localStorage.setItem(key, techSigDataUrl); } catch (_) {}
+      const resp = await fetch(`${API}/api/service-orders/${order.os_number}/sign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeader().headers },
+        body: JSON.stringify({
+          signature_technician: techSigDataUrl,
+          signature_tech_name: techName.trim(),
+        })
+      });
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Erro ao completar assinatura');
+      }
+      const result = await resp.json();
+      onSigned(result);
+      onClose();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }, [API, order, techName, getAuthHeader, onSigned, onClose]);
+
+  // Derived flags — orquestram a UI condicional do modal
+  const completionMode = !!existingClientSig && !existingTechSig;
+  const alreadyFullySigned = !!existingClientSig && !!existingTechSig;
+
   if (!order) return null;
+
+  // ─── Completion mode: cliente já assinou por link, falta só o técnico
+  if (completionMode) {
+    return (
+      <Dialog open={open} onOpenChange={onClose}>
+        <DialogContent className="sm:max-w-lg" data-testid="signature-modal" data-overlay="true">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              Completar Assinatura — OS {order.os_number}
+            </DialogTitle>
+          </DialogHeader>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-md p-3 text-sm text-red-700" data-testid="signature-error">
+              {error}
+            </div>
+          )}
+
+          {submitting ? (
+            <div className="flex flex-col items-center justify-center py-12 gap-3">
+              <Loader2 className="h-8 w-8 animate-spin text-gray-600" />
+              <p className="text-sm text-gray-500">Salvando…</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Preview do cliente (já assinado) */}
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3" data-testid="sig-completion-client-preview">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Check className="h-4 w-4 text-emerald-600" />
+                    <span className="text-sm font-medium text-emerald-900">Cliente já assinou</span>
+                  </div>
+                  {existingClientCpf && (
+                    <span className="text-[11px] text-emerald-700 font-mono">CPF: {existingClientCpf}</span>
+                  )}
+                </div>
+                <div className="bg-white rounded border border-emerald-100 p-2 max-h-32 overflow-hidden flex items-center justify-center">
+                  <img src={existingClientSig} alt="Assinatura do cliente" className="max-h-24 object-contain" />
+                </div>
+                <p className="text-[11px] text-emerald-700 mt-2">
+                  Assinatura recebida via link. Agora complete com sua assinatura para gerar o dossiê.
+                </p>
+              </div>
+
+              {/* Nome do técnico */}
+              <div>
+                <Label className="text-sm font-medium">Técnico *</Label>
+                <Input
+                  value={techName}
+                  onChange={e => setTechName(e.target.value)}
+                  placeholder="Seu nome"
+                  data-testid="sig-completion-tech-name"
+                />
+              </div>
+
+              {/* Assinatura do técnico — reusa saved se disponível */}
+              {savedTechSig ? (
+                <div className="rounded-lg border border-gray-200 p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-gray-600">Assinatura salva encontrada</span>
+                    <Button variant="ghost" size="sm" className="text-xs text-gray-400 h-6 px-2"
+                      onClick={() => setSavedTechSig(null)}
+                      data-testid="sig-completion-redo-tech">
+                      Refazer
+                    </Button>
+                  </div>
+                  <div className="bg-white rounded border border-gray-100 p-2 max-h-32 overflow-hidden flex items-center justify-center">
+                    <img src={savedTechSig} alt="Sua assinatura" className="max-h-24 object-contain" />
+                  </div>
+                  <Button
+                    onClick={() => handleCompleteTechConfirm(savedTechSig)}
+                    className="w-full mt-3 bg-gray-900 hover:bg-gray-800"
+                    data-testid="sig-completion-confirm-saved"
+                  >
+                    <Check className="h-4 w-4 mr-1" /> Confirmar e Salvar
+                  </Button>
+                </div>
+              ) : (
+                <SignaturePad
+                  key="completion-tech"
+                  label="Sua assinatura"
+                  onSave={handleCompleteTechConfirm}
+                />
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  // ─── OS já totalmente assinada — proteção defensiva (normalmente o
+  // parent redireciona para o modo "visualizar", mas se cair aqui, mostra
+  // aviso limpo em vez de canvas vazio.)
+  if (alreadyFullySigned) {
+    return (
+      <Dialog open={open} onOpenChange={onClose}>
+        <DialogContent className="sm:max-w-md" data-testid="signature-modal">
+          <DialogHeader>
+            <DialogTitle>OS {order.os_number} já assinada</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-500">
+            Ambas as assinaturas já foram registradas. Use a opção "Visualizar Assinatura" para conferir.
+          </p>
+          <Button onClick={onClose} className="mt-2">Fechar</Button>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -346,6 +531,57 @@ const SignatureModal = ({ open, onClose, order, onSigned, getAuthHeader, isOverl
             <Button onClick={handleNextFromData} className="w-full bg-gray-900 hover:bg-gray-800" data-testid="sig-next-btn">
               Próximo <ChevronRight className="h-4 w-4 ml-1" />
             </Button>
+
+            {/* Atalho: gera o link agora e o cliente assina primeiro.
+                Útil quando o técnico ainda não vai assinar (ex: OS remota,
+                serviço entregue sem presença) — o técnico completa depois
+                reabrindo o modal em modo "completar assinatura". */}
+            {!linkSent ? (
+              <div className="pt-2 border-t border-gray-100">
+                <p className="text-[11px] text-gray-500 text-center mb-2">
+                  Ou envie o link agora — cliente assina primeiro, você completa depois.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleSendLink}
+                  disabled={linkSending || !clientName.trim()}
+                  className="w-full border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+                  data-testid="sig-send-link-step1-btn"
+                >
+                  {linkSending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Send className="h-4 w-4 mr-1" />}
+                  Enviar link para o cliente
+                </Button>
+                {!clientName.trim() && (
+                  <p className="text-[10px] text-gray-400 text-center mt-1">Preencha o nome do cliente para enviar</p>
+                )}
+              </div>
+            ) : (
+              <div className="p-3 rounded-lg border border-emerald-200 bg-emerald-50" data-testid="sig-link-sent-step1">
+                <div className="flex items-start gap-2">
+                  <Check className="h-4 w-4 text-emerald-600 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-emerald-900">Link enviado</p>
+                    <p className="text-xs text-emerald-700 mt-0.5">
+                      WhatsApp aberto em outra aba. Reabra a OS após o cliente assinar para completar.
+                    </p>
+                    <div className="mt-2 flex items-center gap-2 bg-white rounded border border-emerald-200 px-2 py-1">
+                      <input readOnly value={linkSent.url}
+                        className="flex-1 min-w-0 text-[11px] font-mono text-gray-700 bg-transparent outline-none" />
+                      <button type="button"
+                        onClick={() => { navigator.clipboard?.writeText(linkSent.url).catch(() => {}); }}
+                        className="text-[11px] text-emerald-700 hover:text-emerald-900 font-medium flex-shrink-0">
+                        Copiar
+                      </button>
+                    </div>
+                    <button type="button" onClick={onClose}
+                      className="mt-3 text-xs text-gray-500 hover:text-gray-700 underline">
+                      Fechar (aguardando cliente)
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         ) : step === 2 ? (
           /* Step 2: Tech signature */
