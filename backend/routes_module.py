@@ -479,3 +479,157 @@ async def nav_leg(req: NavLegRequest):
     except Exception as e:
         logger.error(f"Nav-leg unexpected error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── LLM-powered route suggestion analysis ─────────────────────────────
+# Uses the Emergent LLM Key (OpenAI) to enrich the client-side proximity
+# groupings with a human-friendly rationale. NEVER exposes the LLM key to
+# the frontend — the frontend just sends the pre-computed groups.
+
+class RouteAnalyzeOS(BaseModel):
+    os_number: str
+    customer_name: Optional[str] = None
+    city: Optional[str] = None
+    neighborhood: Optional[str] = None
+    service_type: Optional[str] = None
+    status: Optional[str] = None
+    priority: Optional[bool] = False
+    days_open: Optional[int] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+
+class RouteAnalyzeGroup(BaseModel):
+    name: str
+    orders: List[RouteAnalyzeOS]
+    avg_dist_km: Optional[float] = None
+
+
+class RouteAnalyzeRequest(BaseModel):
+    groups: List[RouteAnalyzeGroup]
+    base_lat: Optional[float] = -19.8881334
+    base_lng: Optional[float] = -43.9420748
+
+
+@router.post("/analyze-suggestions")
+async def analyze_route_suggestions(body: RouteAnalyzeRequest):
+    """Analisa as sugestões de rota pré-computadas e retorna um resumo/
+    rationale para cada grupo, considerando: Região, Proximidade da Base,
+    Tempo em aberto (>10 dias) e Prioridade. Usa OpenAI via Emergent LLM Key.
+
+    Retorno: { groups: [ { name, rationale, priority_score, tags, top_reason } ] }
+    Se a LLM falhar, retorna um fallback determinístico (sem quebrar a UX).
+    """
+    import json as _json
+    emergent_key = os.environ.get("EMERGENT_LLM_KEY")
+
+    # Fallback determinístico caso a LLM falhe / não haja chave.
+    def _deterministic_fallback():
+        out = []
+        for g in body.groups:
+            os_list = g.orders or []
+            urgentes = [o for o in os_list if (o.days_open or 0) > 10]
+            prioritarias = [o for o in os_list if o.priority]
+            cities = {}
+            for o in os_list:
+                c = (o.city or "").strip() or "?"
+                cities[c] = cities.get(c, 0) + 1
+            top_city = max(cities.items(), key=lambda x: x[1])[0] if cities else "-"
+            tags = []
+            if g.avg_dist_km is not None and g.avg_dist_km < 8:
+                tags.append("perto-da-base")
+            if len(urgentes) >= max(1, len(os_list) // 3):
+                tags.append("atraso-alto")
+            if prioritarias:
+                tags.append("prioridade")
+            score = (
+                (0 if g.avg_dist_km is None else max(0, 40 - min(g.avg_dist_km, 40))) * 0.4
+                + min(len(urgentes) * 5, 30) * 0.4
+                + min(len(prioritarias) * 8, 30) * 0.2
+            )
+            rationale = (
+                f"{len(os_list)} OSs concentradas em {top_city}. "
+                f"{len(urgentes)} OS em atraso (>10 dias), {len(prioritarias)} marcada(s) como prioridade. "
+                f"Distância média até a base: {g.avg_dist_km:.1f} km."
+                if g.avg_dist_km is not None
+                else f"{len(os_list)} OSs em {top_city}. {len(urgentes)} em atraso (>10 dias)."
+            )
+            out.append({
+                "name": g.name,
+                "rationale": rationale,
+                "priority_score": round(score, 1),
+                "tags": tags,
+                "top_reason": tags[0] if tags else "distribuicao-equilibrada",
+            })
+        # Ordena por score desc
+        out.sort(key=lambda x: -x["priority_score"])
+        return {"groups": out, "source": "fallback"}
+
+    if not emergent_key:
+        logger.warning("EMERGENT_LLM_KEY ausente — usando fallback determinístico")
+        return _deterministic_fallback()
+
+    # Compact payload — evita estourar tokens quando houver muitas OSs.
+    compact_groups = []
+    for g in body.groups:
+        compact_groups.append({
+            "name": g.name,
+            "avg_dist_km": round(g.avg_dist_km, 2) if g.avg_dist_km is not None else None,
+            "os_count": len(g.orders or []),
+            "os": [
+                {
+                    "n": o.os_number,
+                    "cli": (o.customer_name or "")[:40],
+                    "city": o.city or "",
+                    "bairro": o.neighborhood or "",
+                    "tipo": o.service_type or "",
+                    "prio": bool(o.priority),
+                    "dias_aberto": o.days_open or 0,
+                }
+                for o in (g.orders or [])[:25]  # cap por grupo
+            ],
+        })
+
+    system_msg = (
+        "Você é um planejador de rotas para técnicos de campo em Belo Horizonte/MG. "
+        "Analise cada grupo de OSs (Ordens de Serviço) e devolva um JSON válido com a chave "
+        "'groups', uma lista onde cada item contém: "
+        "'name' (mantenha o nome enviado), "
+        "'rationale' (1-2 frases em pt-BR explicando POR QUE atender esse grupo primeiro), "
+        "'priority_score' (0-100, quanto maior mais urgente), "
+        "'tags' (lista curta de strings: 'perto-da-base', 'atraso-alto', 'prioridade', 'regiao-densa', 'alternativa'), "
+        "'top_reason' (um único motivo principal). "
+        "Considere: 1) Região/proximidade (avg_dist_km), 2) Tempo em aberto (dias_aberto > 10 = urgente), "
+        "3) Prioridade (prio=true = crítico), 4) Concentração geográfica (mesma cidade/bairro). "
+        "Retorne APENAS o JSON, sem markdown."
+    )
+    user_text = _json.dumps({"base": {"lat": body.base_lat, "lng": body.base_lng}, "groups": compact_groups}, ensure_ascii=False)
+
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        chat = LlmChat(
+            api_key=emergent_key,
+            session_id=f"route-analyze-{uuid.uuid4()}",
+            system_message=system_msg,
+        ).with_model("openai", "gpt-5.4-mini")
+        response = await chat.send_message(UserMessage(text=user_text))
+        text = (response or "").strip()
+        # Remove possíveis code fences
+        if text.startswith("```"):
+            text = text.strip("`")
+            # remove leading "json\n"
+            if text.lower().startswith("json"):
+                text = text[4:].lstrip()
+        parsed = _json.loads(text)
+        groups_out = parsed.get("groups") or []
+        if not isinstance(groups_out, list) or not groups_out:
+            raise ValueError("LLM retornou payload inesperado")
+        # Ordena por score desc
+        try:
+            groups_out.sort(key=lambda x: -(x.get("priority_score") or 0))
+        except Exception:
+            pass
+        return {"groups": groups_out, "source": "llm"}
+    except Exception as e:
+        logger.warning(f"[analyze-suggestions] LLM falhou, usando fallback: {e}")
+        return _deterministic_fallback()

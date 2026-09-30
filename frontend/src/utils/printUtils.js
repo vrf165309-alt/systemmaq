@@ -110,7 +110,10 @@ export const buildCopyHtml = (order, sigData = null) => {
 
 export const printOS = (order, sigData = null) => {
   const copyHtml = buildCopyHtml(order, sigData);
-  const printContent = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title></title><style>@page{size:A4;margin:0;}html,body{margin:0;padding:0;font-family:Arial,sans-serif;}.print-page{width:210mm;min-height:297mm;padding:10mm;box-sizing:border-box;margin:0;}.copy{width:190mm;height:132mm;}.separator{width:190mm;height:6mm;border-top:1px dashed #000;}</style></head><body><div class="print-page"><div class="copy">${copyHtml}</div><div class="separator"></div><div class="copy">${copyHtml}</div></div></body></html>`;
+  // Uma única cópia por página (usuário confirmou 30/09/2026 — pedia
+  // "somente uma cópia, não o documento completo"). O separador
+  // tracejado e a segunda cópia foram removidos.
+  const printContent = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title></title><style>@page{size:A4;margin:0;}html,body{margin:0;padding:0;font-family:Arial,sans-serif;}.print-page{width:210mm;min-height:297mm;padding:10mm;box-sizing:border-box;margin:0;}.copy{width:190mm;}</style></head><body><div class="print-page"><div class="copy">${copyHtml}</div></div></body></html>`;
 
   const existingFrame = document.getElementById('mastermaq-print-frame');
   if (existingFrame) { try { existingFrame.parentNode.removeChild(existingFrame); } catch (_) {} }

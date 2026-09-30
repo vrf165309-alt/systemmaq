@@ -100,7 +100,38 @@ Cenário: o técnico está no cliente, mas o cliente não está presente (ou o t
   4. Abre `wa.me` em nova aba
   5. Mostra card verde "Link enviado" com URL + botão "Copiar" + botão "Fechar (aguardando cliente assinar)"
 
-## Sessão 30/08/2026 (parte 3) — Fix urgente: HTTP 520 em produção após deploy
+## Sessão 15/09/2026 — Fix completo dos scrapers Hisense e HQ
+
+### 13. Scraper capturando dados desalinhados (Hisense + HQ) — CRÍTICO
+**Sintoma**: usuário reportou que scraper Hisense estava salvando OSs com todos os campos deslocados: nome=telefone, produto=modelo, modelo="MG", tipo_atendimento="3", defeito=service_type. HQ com sintoma similar (nome="BELO HORIZONTE").
+
+**Root causes identificadas** (múltiplas, em série):
+1. **`run_sync_manual.py` conectava ao MongoDB via Motor**, mas o app real usa Supabase. Scraper "capturava" OSs no MongoDB local que ninguém lê. Fix: importar `db` do `supabase_db` no script manual.
+2. **Guard de colisão sempre skipava OSs criadas manualmente** (source=`local`). Fix: auto-migrate para `telecontrol_*` quando fonte antiga é local/mastermaq (caso ARTHUR).
+3. **`fetch_order_details` retornando None era silenciosamente ignorado** com `if details:`. Fix: log error + adicionar ao result.errors.
+4. **Índices fixos `cells[X]`** quebravam a cada mudança de layout do Telecontrol. Fix estrutural: mapeamento header-based lendo `<thead th>` em runtime, normalização (lowercase + strip acentos), fallback para índice legado.
+5. **Telecontrol tem `<th>` "sorting_asc"** vazio extra no início do thead que o tbody não replica → todos os campos ficaram +1 deslocados. Fix: `cellOffset = 1` fixo.
+6. **HQ tem layout de tabela completamente diferente** do Hisense (14 headers vs 28, ordem diferente). Fix: dropar TODOS os campos do summary da HQ + forçar `fetch_order_details` quando `customer_name` existente parece cidade ou dígitos.
+7. **Cor "Tomada"** (`rgb(143, 188, 143)`) não mapeada. Adicionada ao `statusColorMap`.
+
+**Instrumentação nova**:
+- `diagnostic.total_rows / skipped_few_cells / skipped_no_os_number / parse_errors` — expõe drops silenciosos na extração JS
+- `diagnostic.headers / header_map / thead_raw / first_row_dump` — permite ver exatamente o que o Telecontrol está entregando
+- Log `Fetched details for OS X: NAME` para cada detail page bem-sucedida
+- Log `MIGRANDO` para OSs auto-migradas de local → telecontrol_*
+- Log `INSERIDA` para cada nova OS persistida
+- Log `Volume anômalo` com histórico dos últimos ciclos
+
+**Resultados finais**:
+- Hisense: 61 OSs extraídas, 5 novas inseridas (ELAINE, ANDRE, BERTONY, JANATAS, ELOISA), ARTHUR migrado, 57 atualizadas com nome/produto/modelo/tipo/defeito corretos.
+- HQ: 2 novas + 16 atualizadas via detail page. Nomes reais restaurados (VICTOR, PATRICIMARA, RENATO, BRUNA, etc.).
+
+**Arquivos modificados**:
+- `/app/backend/telecontrol_scraper.py` — refatoração da extração JS + collision guard + HQ layout fix + logs
+- `/app/backend/run_sync_manual.py` — trocar Mongo por Supabase + sync_logs opcional
+- `/app/backend/tests/dump_missing_os.py`, `test_find_one_missing.py` — scripts de diagnóstico
+
+
 
 ## Sessão 31/08/2026 — Fixes: link duplicado + fluxo cliente-primeiro
 
@@ -154,3 +185,119 @@ Antes: `technician_signature` era OBRIGATÓRIO no `POST /signature-link` — o t
 ## Ambientes
 - Preview (dev): `https://2c89069e-d05b-494c-a8d1-ed71aa3f7761.preview.emergentagent.com`
 - Produção: `https://mastermaq-system.online` (deploy manual pelo user quando OK)
+
+## Sessão 30/09/2026 — Roteiro inteligente com IA + Mapa 3D
+
+### 14. Sugestões de rota enriquecidas por LLM (Emergent LLM Key / OpenAI)
+- **Backend** (`routes_module.py`): novo endpoint `POST /api/routes/analyze-suggestions` (autenticado).
+  Recebe os 4 grupos pré-computados no frontend (Mais Próximas, Região Concentrada, Região Alternativa,
+  Prioridade) e chama `gpt-5.4-mini` via `emergentintegrations` para retornar, para cada grupo:
+  `rationale` (1-2 frases em pt-BR), `priority_score` (0-100), `tags` (perto-da-base, prioridade,
+  atraso-alto, regiao-densa, alternativa) e `top_reason`.
+  Considera: Região, Proximidade da Base, Tempo em aberto (>10 dias) e OSs marcadas como prioridade.
+  Fallback determinístico se a LLM falhar/estiver indisponível — a UX nunca quebra.
+  A chave `EMERGENT_LLM_KEY` NUNCA é exposta ao frontend.
+- **Frontend** (`RoutesPage.js`): após `computeProximitySuggestions()` calcular os 4 grupos locais,
+  dispara `POST /api/routes/analyze-suggestions` em paralelo (não bloqueia). O painel de sugestões
+  agora exibe: badge de score IA (verde/amarelo/vermelho por urgência), rationale em texto pequeno,
+  tags coloridas e indicador "analisando com IA…" enquanto carrega.
+
+### 15. Filtros de Roteiro consolidados
+- Paginação client-side (10/pág real) já entregue na sessão anterior — validada.
+- Filtros de cidade/bairro/status agora agem sobre TODA a lista (limit=5000, page=1) ao invés das
+  10 OSs da página atual. Filtros de bairro reduzem automaticamente ao selecionar cidades.
+- Sugestões restritas aos status roteirizáveis (Aguardando Análise A.T, Conserto, Peças, Auditoria,
+  Aberta Call-Center). MAX_OS por opção sobe de 8 → 20.
+- Bloqueio de 8 fotos aplicado apenas para OS de `Garantia` (Orçamento libera direto).
+
+### 16. Mapa estilo Google Maps 3D
+- `RouteMapDialog.GoogleMap` agora usa `mapId: 'DEMO_MAP_ID'` (vector map),
+  `tilt: 45` inicial e `rotateControl: true`.
+- Em `handleMapLoad`: instancia `google.maps.TrafficLayer()` sobre o mapa (linhas verde/amarelo/
+  vermelho de trânsito em tempo real, iguais ao Google Maps oficial). Guarda ref em
+  `map.__trafficLayer` para não duplicar.
+- Durante navegação (`watchPosition`): quando `speed > 3 km/h`, chama `map.setHeading(heading)` para
+  rotacionar o mapa no sentido do movimento. `setTilt(60)` em follow-mode para dar profundidade 3D.
+- `recenterOnTech`: zoom 18, tilt 60 ao retornar ao modo follow.
+- `dragstart` manual: reseta heading=0 e tilt=45 para conforto de leitura.
+
+### 17. "Compartilhar Localização" liberado a qualquer momento
+- Botão no sidebar de cada parada agora aparece SEMPRE (antes só em pending/arrived/in_transit).
+  Admin/técnico pode gerar o link do cliente antes mesmo de iniciar a navegação — o token
+  público (`/tracking/share-token`) já é válido a partir da criação do roteiro.
+
+**Arquivos modificados**:
+- `/app/backend/routes_module.py` — novo endpoint `/analyze-suggestions` + models
+- `/app/frontend/src/pages/RoutesPage.js` — chamada LLM + UI enriquecida + mapa 3D
+  (tilt/heading/TrafficLayer/DEMO_MAP_ID) + libera compartilhar sempre
+
+## Backlog restante
+- P2: Migrar de `DEMO_MAP_ID` para um Map ID próprio do Google Cloud (permite estilos custom).
+- P2: Sistema de alerta externo (SMS/Webhook) para falha crítica dos scrapers.
+- P3: Migrar `image_url` / `product_type` do sidecar MongoDB para colunas nativas no Supabase.
+
+
+## Sessão 30/09/2026 (parte 2) — Roteiro refinado + Mapa "arrow behind" + Status clean
+
+### 18. Roteirização com 4 novos grupos (Região / Próximas / Tempo / Prioridade)
+- **Grupos redesenhados** (RoutesPage.js `computeProximitySuggestions`):
+  - **Região (Cluster Denso)**: encontra o cluster mais denso — para cada OS
+    conta quantas outras estão em raio de 3 km; o cluster com maior contagem
+    vira o grupo. Não é distância da base; é OSs perto UMA DAS OUTRAS.
+  - **Próximas da Base**: todas as OSs até 15 km da base (Rua Descalvado 636,
+    Renascença/BH — coord: -19.8881334, -43.9420748), ordenadas por distância.
+    Sem cap artificial.
+  - **Tempo**: OSs com >10 dias em aberto, ordenadas por dias_open desc.
+  - **Prioridade**: apenas OSs com flag `priority=true`.
+- **Multi-seleção**: cada card tem checkbox; botão "Aplicar (N)" une as OSs de
+  todas as sugestões marcadas (dedupe). Clicar no card sem marcar aplica só
+  aquele grupo.
+- **Egress**: chamada LLM agora envia no máx. 25 OSs por grupo (cap por egress).
+
+### 19. Fix `limit=5000` no fetch de OSs para roteirização
+- **Backend** (`server.py`): o clamp anterior `limit = min(max(limit,1), 30)`
+  cortava o retorno em 30 OSs mesmo quando o frontend pedia 5000. Agora, quando
+  `exclude_status` está presente (é o modal de Criar Roteiro), o cap sobe para
+  5000. O "X OS encontradas" agora reflete o total real filtrado (antes ficava
+  fixo em ≤200).
+- **Frontend**: `osTotalItems` e `osTotalPages` passam a ser recalculados no
+  useEffect dos filtros — reflete o count após aplicar cidade/bairro/status.
+
+### 20. Mapa "câmera atrás do técnico" (Google Maps style)
+- **Ícone da seta**: nova `buildNavArrowSVG(heading, techName)` renderiza a
+  seta azul de navegação (chevron com halo azul) igual ao Google Maps mobile.
+  Substitui a moto no marcador do próprio técnico durante navegação.
+- **Precisão de GPS**: `watchPosition` reduzido `timeout: 10000 → 5000`,
+  `enableHighAccuracy: true` e `maximumAge: 0` já estavam.
+- **Heading fallback (bússola)**: novo `useEffect` no `deviceorientation` /
+  `deviceorientationabsolute`. Quando o GPS não devolve heading (celular
+  parado / hardware sem suporte), lê o magnetômetro. iOS 13+ solicita permissão
+  automaticamente via `DeviceOrientationEvent.requestPermission`.
+  Guarda em `headingRef.current`.
+- **recenterOnTech**: agora usa `map.setOptions({center, zoom:18, tilt:55,
+  heading: headingRef.current})` — câmera aponta na direção do movimento
+  ("por trás do técnico") como sugerido pelo usuário. Depois um `panBy(0,-80)`
+  coloca a seta no terço inferior.
+- **Auto-follow**: zoom 18 em vez de 17, tilt 60°, setHeading contínuo
+  (sem gate de speed>3km/h — usa headingRef que já é filtrado).
+
+### 21. StatusQuickAction — dropdown clean + fix 405
+- **Design**: trocado `<select>` nativo por Shadcn `<Select>` — as OPÇÕES
+  agora são branco/preto (classes `bg-white text-gray-900`) em vez de herdar
+  a cor do status atual. O trigger continua colorido pelo status vigente
+  (badge visual), mas o menu aberto é limpo/legível.
+- **Fix 405** (`Erro ao mudar status: Method Not Allowed`):
+  - Guarda `if (!order?.os_number)` no `patch()` — antes, quando o
+    `os_number` estava undefined a URL virava `/api/service-orders/` e o
+    servidor devolvia 405.
+  - Payload PUT agora envia APENAS `{ status }` em vez de `{ ...order, status }` —
+    evita conflitos com campos stale (fotos antigas, endereço em edição).
+  - Guarda equivalente no autosave do OSDetailModal (linha ~2046).
+
+**Arquivos modificados nesta parte 2**:
+- `/app/backend/server.py` — clamp de limit adaptativo para `exclude_status`.
+- `/app/frontend/src/pages/RoutesPage.js` — novos grupos, multi-seleção,
+  seta de navegação SVG, deviceorientation, recenterOnTech redesenhado.
+- `/app/frontend/src/pages/ServiceOrdersPage.js` — StatusQuickAction com
+  Shadcn Select, guardas de os_number, payload mínimo no PUT.
+

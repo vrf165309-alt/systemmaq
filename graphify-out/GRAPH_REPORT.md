@@ -1,16 +1,16 @@
-# Graph Report - app  (2026-08-30)
+# Graph Report - app  (2026-08-31)
 
 ## Corpus Check
-- 121 files · ~230,619 words
+- 123 files · ~233,594 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1214 nodes · 1948 edges · 135 communities (71 shown, 64 thin omitted)
+- 1234 nodes · 1968 edges · 139 communities (75 shown, 64 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 6 edges (avg confidence: 0.55)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `7ff2a485`
+- Built from commit: `c35ad930`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -28,11 +28,11 @@
 - TelecontrolScraper
 - serviceWorkerRegistration.js
 - App.js
-- use-toast.js
-- post
-- accordion.jsx
-- BaseModel
 - form.jsx
+- post
+- utils.js
+- BaseModel
+- button.jsx
 - components.json
 - cn
 - menubar.jsx
@@ -45,14 +45,14 @@
 - create_external_os
 - users_module.py
 - assinafy_service.py
-- button.jsx
+- DashboardLayout.js
 - mark_all_notifications_read
-- card.jsx
+- LoginPage.js
 - command.jsx
 - context-menu.jsx
 - whatsapp_module.py
 - migrate_to_supabase.py
-- _run_sync_with_health
+- startup_auto_sync
 - create_signature_link
 - table.jsx
 - migrate_railway.py
@@ -77,7 +77,7 @@
 - CacheHeaderMiddleware
 - dispatch_webhook.sh
 - craco.config.js
-- DashboardLayout.js
+- dropdown-menu.jsx
 - Learn More
 - watch_crons.sh
 - axios
@@ -91,7 +91,7 @@
 - html2pdf.js
 - input-otp
 - mammoth
-- PublicSignPage.js
+- useAuth
 - @radix-ui/react-accordion
 - @radix-ui/react-alert-dialog
 - @radix-ui/react-aspect-ratio
@@ -121,7 +121,7 @@
 - @react-google-maps/api
 - @radix-ui/react-toast
 - @radix-ui/react-slider
-- whatsapp_send_copy
+- alert-dialog.jsx
 - react-scripts
 - recharts
 - @supabase/supabase-js
@@ -137,12 +137,17 @@
 - @radix-ui/react-toggle
 - react-hook-form
 - react-router-dom
+- RCA — HTTP 520 em POST /api/auth/login (produção mastermaq-system.online)
 - BaseModel
 - delete
 - get
 - HTTPAuthorizationCredentials
 - post
 - put
+- Jules Nightly Report — 2026-08-31
+- get_alerts_summary
+- avatar.jsx
+- verify_token
 
 ## God Nodes (most connected - your core abstractions)
 1. `cn()` - 67 edges
@@ -159,23 +164,23 @@
 ## Surprising Connections (you probably didn't know these)
 - `OrderDetailOverlay()` --indirect_call--> `toast()`  [INFERRED]
   frontend/src/components/OrderDetailOverlay.js → frontend/src/hooks/use-toast.js
+- `AlertDialogHeader()` --calls--> `cn()`  [EXTRACTED]
+  frontend/src/components/ui/alert-dialog.jsx → frontend/src/lib/utils.js
+- `AlertDialogFooter()` --calls--> `cn()`  [EXTRACTED]
+  frontend/src/components/ui/alert-dialog.jsx → frontend/src/lib/utils.js
 - `BreadcrumbSeparator()` --calls--> `cn()`  [EXTRACTED]
   frontend/src/components/ui/breadcrumb.jsx → frontend/src/lib/utils.js
 - `BreadcrumbEllipsis()` --calls--> `cn()`  [EXTRACTED]
   frontend/src/components/ui/breadcrumb.jsx → frontend/src/lib/utils.js
-- `CommandShortcut()` --calls--> `cn()`  [EXTRACTED]
-  frontend/src/components/ui/command.jsx → frontend/src/lib/utils.js
-- `ContextMenuShortcut()` --calls--> `cn()`  [EXTRACTED]
-  frontend/src/components/ui/context-menu.jsx → frontend/src/lib/utils.js
 
 ## Import Cycles
 - 3-file cycle: `frontend/src/components/DashboardLayout.js -> frontend/src/components/OrderDetailOverlay.js -> frontend/src/pages/ServiceOrdersPage.js -> frontend/src/components/DashboardLayout.js`
 
-## Communities (135 total, 64 thin omitted)
+## Communities (139 total, 64 thin omitted)
 
 ### Community 0 - "server.py"
 Cohesion: 0.04
-Nodes (78): api_health(), CEPResponse, check_new_external_os(), create_token(), env_check(), fetch_temp_pdf(), get_alerts_summary(), get_customer_history() (+70 more)
+Nodes (69): api_health(), CEPResponse, check_new_external_os(), env_check(), fetch_temp_pdf(), get_customer_history(), get_dashboard(), get_distinct_brands() (+61 more)
 
 ### Community 1 - "devDependencies"
 Cohesion: 0.04
@@ -198,16 +203,16 @@ Cohesion: 0.11
 Nodes (35): BreadcrumbPoint, create_share_token(), current_session(), end_tracking(), get_breadcrumbs(), get_live_position(), get_tracking_config(), GPSUpdate (+27 more)
 
 ### Community 6 - "RoutesPage.js"
-Cohesion: 0.13
-Nodes (10): Checkbox, PopoverContent, Slider, supabase, EXCLUDED_STATUSES, GOOGLE_MAPS_LIBRARIES, IMPORTANT: do NOT depend on `orders` directly — its reference changes on, IMPORTANT: do NOT depend on `orders` — its reference changes on every (+2 more)
+Cohesion: 0.10
+Nodes (24): Checkbox, PopoverContent, Slider, supabase, buildMotoSVG(), buildTechIconSVG(), CreateRouteModal(), deduplicatePlaces() (+16 more)
 
 ### Community 7 - "ServiceOrdersPage.js"
-Cohesion: 0.12
-Nodes (20): LaudoModal(), PHOTO_LABELS, IMPORTANT: the OS PUT (step 2) is ADDITIVE — we only send a field if the, RECALL_PHOTO_LABELS, OrderDetailOverlay(), TabsContent, TabsList, TabsTrigger (+12 more)
+Cohesion: 0.14
+Nodes (22): OrderDetailOverlay(), TabsContent, TabsList, TabsTrigger, Textarea, BRAND_LIST, BrandLogo(), GARANTIA_SUBTYPES (+14 more)
 
 ### Community 8 - "InventoryPage.js"
-Cohesion: 0.12
-Nodes (12): DialogContent, DialogDescription, DialogHeader(), DialogOverlay, DialogTitle, DEFAULT_CATEGORIES, ENTRY_REASONS, EXIT_REASONS (+4 more)
+Cohesion: 0.14
+Nodes (7): DEFAULT_CATEGORIES, ENTRY_REASONS, EXIT_REASONS, PRODUCT_TYPES, SERIAL_STATUSES, TABS, UNITS
 
 ### Community 9 - "laudo_generator.py"
 Cohesion: 0.10
@@ -218,36 +223,36 @@ Cohesion: 0.09
 Nodes (19): Script para rodar o sync do Telecontrol manualmente, cobrindo um período…, Run sync for both Hisense and HQ Telecontrol, Run sync periodically every SYNC_INTERVAL_MINUTES, run_sync(), scheduler(), extract_brand_from_description(), Internal sync implementation, Close browser instance safely (+11 more)
 
 ### Community 12 - "App.js"
-Cohesion: 0.15
-Nodes (6): App(), Toaster(), AuthContext, AuthProvider(), failedQueue, root
+Cohesion: 0.10
+Nodes (7): App(), Toaster(), AuthContext, AuthProvider(), failedQueue, root, PublicSignPage()
 
-### Community 13 - "use-toast.js"
-Cohesion: 0.16
-Nodes (18): Toast, ToastAction, ToastClose, ToastDescription, ToastTitle, toastVariants, ToastViewport, Toaster() (+10 more)
+### Community 13 - "form.jsx"
+Cohesion: 0.06
+Nodes (36): react, Carousel, CarouselContent, CarouselContext, CarouselItem, CarouselNext, CarouselPrevious, useCarousel() (+28 more)
 
 ### Community 14 - "post"
 Cohesion: 0.08
-Nodes (28): create_os_share_token(), fire_test_webhook(), generate_laudo_word(), get_photos_status(), increment_print_count(), LaudoData, migrate_fix_aguardando_status(), migrate_statuses() (+20 more)
+Nodes (33): fire_test_webhook(), force_resync(), get_photos_status(), increment_print_count(), migrate_fix_aguardando_status(), migrate_statuses(), Notification, public_signature_submit() (+25 more)
 
-### Community 15 - "accordion.jsx"
-Cohesion: 0.50
-Nodes (3): AccordionContent, AccordionItem, AccordionTrigger
+### Community 15 - "utils.js"
+Cohesion: 0.11
+Nodes (10): AccordionContent, AccordionItem, AccordionTrigger, HoverCardContent, Progress, RadioGroup, RadioGroupItem, Separator (+2 more)
 
 ### Community 16 - "BaseModel"
-Cohesion: 0.13
-Nodes (20): create_service_order(), force_resync(), login(), LoginRequest, LoginResponse, Notification, public_signature_submit(), PublicSignSubmit (+12 more)
+Cohesion: 0.10
+Nodes (20): create_os_share_token(), create_service_order(), create_token(), generate_laudo_word(), LaudoData, login(), LoginRequest, LoginResponse (+12 more)
 
-### Community 17 - "form.jsx"
-Cohesion: 0.06
-Nodes (32): react, Carousel, CarouselContent, CarouselContext, CarouselItem, CarouselNext, CarouselPrevious, useCarousel() (+24 more)
+### Community 17 - "button.jsx"
+Cohesion: 0.17
+Nodes (12): LaudoModal(), PHOTO_LABELS, IMPORTANT: the OS PUT (step 2) is ADDITIVE — we only send a field if the, RECALL_PHOTO_LABELS, Button, DialogContent, DialogDescription, DialogFooter() (+4 more)
 
 ### Community 18 - "components.json"
 Cohesion: 0.11
 Nodes (17): aliases, components, hooks, lib, ui, utils, iconLibrary, rsc (+9 more)
 
 ### Community 19 - "cn"
-Cohesion: 0.08
-Nodes (30): AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter(), AlertDialogHeader(), AlertDialogOverlay, AlertDialogTitle (+22 more)
+Cohesion: 0.21
+Nodes (13): buttonVariants, Calendar(), Pagination(), PaginationContent, PaginationEllipsis(), PaginationItem, PaginationLink(), PaginationNext() (+5 more)
 
 ### Community 20 - "menubar.jsx"
 Cohesion: 0.12
@@ -262,8 +267,8 @@ Cohesion: 0.15
 Nodes (15): _convert_pptx_to_pdf(), _find_soffice(), get_object(), init_storage(), _pdf_page_count(), put_object(), APIRouter, Manuais Module - File management for technical manuals Upload, organize by… (+7 more)
 
 ### Community 23 - "printingService.js"
-Cohesion: 0.19
-Nodes (20): LabelTemplatesPage(), GARANTIA_SUBTYPES, normalizeServiceType(), OrderDetailModal(), OS_STATUSES, SERVICE_TYPES, ServiceOrdersPage(), baseStyles() (+12 more)
+Cohesion: 0.30
+Nodes (14): LabelTemplatesPage(), baseStyles(), calcQrSizeMm(), firstName(), fmtDate(), generateQRDataURL(), getOrigin(), LABEL_SIZES (+6 more)
 
 ### Community 25 - "manifest.json"
 Cohesion: 0.14
@@ -285,16 +290,16 @@ Nodes (11): hash_password(), BaseModel, Users module — RBAC (Admin vs Technici
 Cohesion: 0.17
 Nodes (11): create_assignment(), create_signer(), generate_os_pdf(), get_document_status(), Assinafy Digital Signature Service Handles PDF generation and Assinafy API…, Upload a PDF document to Assinafy and return the document data, Create a signer in Assinafy, Create a virtual assignment for the document (+3 more)
 
-### Community 30 - "button.jsx"
-Cohesion: 0.18
-Nodes (16): DashboardLayout(), NotificationsPanel(), Button, DialogFooter(), Input, Label, labelVariants, Switch (+8 more)
+### Community 30 - "DashboardLayout.js"
+Cohesion: 0.26
+Nodes (10): DashboardLayout(), menuItems, Badge(), badgeVariants, DropdownMenuContent, DropdownMenuItem, Input, Label (+2 more)
 
 ### Community 31 - "mark_all_notifications_read"
 Cohesion: 0.50
 Nodes (5): delete_service_order(), mark_all_notifications_read(), mark_notification_read(), delete, put
 
-### Community 32 - "card.jsx"
-Cohesion: 0.28
+### Community 32 - "LoginPage.js"
+Cohesion: 0.33
 Nodes (6): Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle
 
 ### Community 33 - "command.jsx"
@@ -313,8 +318,8 @@ Nodes (8): get_saudacao(), _get_shared_client(), APIRouter, AsyncClient, WhatsAp
 Cohesion: 0.31
 Nodes (8): clean_doc(), insert_batch(), main(), migrate_collection(), Migration script: MongoDB → Supabase (PostgreSQL via REST API) Exports all data…, Remove MongoDB _id and convert non-serializable types, Insert a batch of rows into Supabase via REST API, Migrate a MongoDB collection to a Supabase table
 
-### Community 37 - "_run_sync_with_health"
-Cohesion: 0.14
+### Community 37 - "startup_auto_sync"
+Cohesion: 0.15
 Nodes (14): _load_health_from_db(), _persist_health(), Download Playwright chromium at runtime if missing. Cloud Build cannot fetch…, Auto-migrate on startup: source names and status normalization, Start background auto-sync loop for Telecontrol HISENSE only. HQ is NOT auto-…, Background task that flips a scraper to `down` when its last run is stale…, Run scraper sync, update health metrics, and trigger auto-resync on recovery.…, _run_sync_with_health() (+6 more)
 
 ### Community 38 - "create_signature_link"
@@ -338,8 +343,8 @@ Cohesion: 0.25
 Nodes (6): DrawerContent, DrawerDescription, DrawerFooter(), DrawerHeader(), DrawerOverlay, DrawerTitle
 
 ### Community 43 - "ManuaisPage.js"
-Cohesion: 0.17
-Nodes (14): Badge(), badgeVariants, SelectContent, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator (+6 more)
+Cohesion: 0.20
+Nodes (12): SelectContent, SelectItem, SelectLabel, SelectScrollDownButton, SelectScrollUpButton, SelectSeparator, SelectTrigger, DEFAULT_BRANDS (+4 more)
 
 ### Community 44 - "navigation-menu.jsx"
 Cohesion: 0.25
@@ -401,9 +406,9 @@ Nodes (3): CacheHeaderMiddleware, Cache policy: - Live data (service-orders, rou
 Cohesion: 0.50
 Nodes (3): config, path, webpackConfig
 
-### Community 62 - "DashboardLayout.js"
-Cohesion: 0.17
-Nodes (12): menuItems, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuShortcut() (+4 more)
+### Community 62 - "dropdown-menu.jsx"
+Cohesion: 0.25
+Nodes (7): DropdownMenuCheckboxItem, DropdownMenuLabel, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuShortcut(), DropdownMenuSubContent, DropdownMenuSubTrigger
 
 ### Community 63 - "Learn More"
 Cohesion: 0.14
@@ -413,24 +418,44 @@ Nodes (13): Advanced Configuration, Analyzing the Bundle Size, Available Scripts
 Cohesion: 0.13
 Nodes (15): cra-template, dependencies, cra-template, @radix-ui/react-navigation-menu, @radix-ui/react-scroll-area, @radix-ui/react-separator, @radix-ui/react-switch, react-dom (+7 more)
 
+### Community 76 - "useAuth"
+Cohesion: 0.22
+Nodes (9): NotificationsPanel(), ScrollArea, ScrollBar, useAuth(), LoginPage(), RoutesPage(), UsersPage(), WebhooksAdminPage() (+1 more)
+
 ### Community 89 - "input-otp.jsx"
 Cohesion: 0.40
 Nodes (4): InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot
 
 ### Community 90 - "PRD — Mastermaq / Maq-Sync-Hub"
-Cohesion: 0.12
-Nodes (16): 1. Migração do repositório (20/07), 2. Bug "Dados para Laudo apagam de um dia pro outro" (20/07), 3. Bug "somente 1ª imagem em todas" no laudo DOCX (21-31/07), 4. Scraper Telecontrol blindado (31/07), 5. Bug "fotos apagam ao reabrir OS" (31/07), 6. Aba "OSs Atrasadas" não renderizava (ServiceOrdersPage.js:1196), 7. Campainha tocando ao mudar de página (DashboardLayout.js:200), 8. Adesivo personalizado imprimindo torto / vários por impressão (LabelTemplatesPage.js + printingService.js) (+8 more)
+Cohesion: 0.10
+Nodes (20): 11. Bug: mensagem WhatsApp com URL duplicada (`https://.../https://.../sign/...`), 12. Feature: fluxo "cliente assina primeiro, técnico completa depois", 1. Migração do repositório (20/07), 2. Bug "Dados para Laudo apagam de um dia pro outro" (20/07), 3. Bug "somente 1ª imagem em todas" no laudo DOCX (21-31/07), 4. Scraper Telecontrol blindado (31/07), 5. Bug "fotos apagam ao reabrir OS" (31/07), 6. Aba "OSs Atrasadas" não renderizava (ServiceOrdersPage.js:1196) (+12 more)
 
 ### Community 93 - "PublicTrackingPage.js"
 Cohesion: 0.67
 Nodes (3): GOOGLE_MAPS_LIBRARIES, haversine(), PublicTrackingPage()
 
-### Community 106 - "whatsapp_send_copy"
-Cohesion: 0.67
-Nodes (3): Upload the PDF generated on the frontend to Meta Media API, then send it as a…, SendCopyRequest, whatsapp_send_copy()
+### Community 106 - "alert-dialog.jsx"
+Cohesion: 0.22
+Nodes (8): AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter(), AlertDialogHeader(), AlertDialogOverlay, AlertDialogTitle
+
+### Community 128 - "RCA — HTTP 520 em POST /api/auth/login (produção mastermaq-system.online)"
+Cohesion: 0.25
+Nodes (7): Ações recomendadas (para E1/usuário aplicar — NÃO aplicadas por mim), Causa-raiz (diagnosticada, não reproduzida), Evidências coletadas, Hipóteses do reporte × veredito, Observações, RCA — HTTP 520 em POST /api/auth/login (produção mastermaq-system.online), TL;DR
+
+### Community 135 - "Jules Nightly Report — 2026-08-31"
+Cohesion: 0.25
+Nodes (7): Feature Completion Breakdown, Jules Nightly Report — 2026-08-31, Next Milestone Target, Project Status: [0% Complete], Publishing Status, Test Results, What Was Shipped Yesterday
+
+### Community 136 - "get_alerts_summary"
+Cohesion: 0.40
+Nodes (5): get_alerts_summary(), _parse_os_date(), Aceita os formatos de data usados em service_orders., Alertas que devem tocar a campainha e acender o badge do cabeçalho., _tc_label()
+
+### Community 137 - "avatar.jsx"
+Cohesion: 0.50
+Nodes (3): Avatar, AvatarFallback, AvatarImage
 
 ## Knowledge Gaps
-- **318 isolated node(s):** `1. Migração do repositório (20/07)`, `2. Bug "Dados para Laudo apagam de um dia pro outro" (20/07)`, `3. Bug "somente 1ª imagem em todas" no laudo DOCX (21-31/07)`, `4. Scraper Telecontrol blindado (31/07)`, `5. Bug "fotos apagam ao reabrir OS" (31/07)` (+313 more)
+- **333 isolated node(s):** `Project Status: [0% Complete]`, `What Was Shipped Yesterday`, `Feature Completion Breakdown`, `Publishing Status`, `Test Results` (+328 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **64 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -438,15 +463,15 @@ Nodes (3): Upload the PDF generated on the frontend to Meta Media API, then send
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `dependencies` connect `dependencies` to `devDependencies`, `form.jsx`, `date-fns`, `axios`, `class-variance-authority`, `clsx`, `cmdk`, `embla-carousel-react`, `@hookform/resolvers`, `html2pdf.js`, `input-otp`, `mammoth`, `@radix-ui/react-accordion`, `@radix-ui/react-alert-dialog`, `@radix-ui/react-aspect-ratio`, `@radix-ui/react-avatar`, `@radix-ui/react-checkbox`, `@radix-ui/react-collapsible`, `@radix-ui/react-context-menu`, `@radix-ui/react-dialog`, `@radix-ui/react-dropdown-menu`, `@radix-ui/react-hover-card`, `@radix-ui/react-label`, `@radix-ui/react-menubar`, `@radix-ui/react-progress`, `@radix-ui/react-radio-group`, `@radix-ui/react-select`, `qrcode`, `fabric`, `@radix-ui/react-slot`, `@radix-ui/react-popover`, `lucide-react`, `@radix-ui/react-toggle-group`, `@radix-ui/react-tooltip`, `@radix-ui/react-tabs`, `@react-google-maps/api`, `@radix-ui/react-toast`, `@radix-ui/react-slider`, `react-scripts`, `recharts`, `@supabase/supabase-js`, `tailwind-merge`, `tailwindcss-animate`, `vaul`, `zod`, `react-day-picker`, `sonner`, `next-themes`, `@radix-ui/react-toggle`, `react-hook-form`, `react-router-dom`?**
-  _High betweenness centrality (0.105) - this node is a cross-community bridge._
-- **Why does `react` connect `form.jsx` to `use-toast.js`, `dependencies`?**
-  _High betweenness centrality (0.088) - this node is a cross-community bridge._
-- **Why does `cn()` connect `cn` to `RoutesPage.js`, `ServiceOrdersPage.js`, `InventoryPage.js`, `use-toast.js`, `accordion.jsx`, `form.jsx`, `menubar.jsx`, `button.jsx`, `card.jsx`, `command.jsx`, `context-menu.jsx`, `table.jsx`, `breadcrumb.jsx`, `drawer.jsx`, `ManuaisPage.js`, `navigation-menu.jsx`, `sheet.jsx`, `toggle-group.jsx`, `alert.jsx`, `DashboardLayout.js`, `input-otp.jsx`?**
-  _High betweenness centrality (0.048) - this node is a cross-community bridge._
-- **What connects `1. Migração do repositório (20/07)`, `2. Bug "Dados para Laudo apagam de um dia pro outro" (20/07)`, `3. Bug "somente 1ª imagem em todas" no laudo DOCX (21-31/07)` to the rest of the system?**
-  _318 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _High betweenness centrality (0.092) - this node is a cross-community bridge._
+- **Why does `react` connect `form.jsx` to `dependencies`, `RoutesPage.js`?**
+  _High betweenness centrality (0.076) - this node is a cross-community bridge._
+- **Why does `cn()` connect `cn` to `RoutesPage.js`, `ServiceOrdersPage.js`, `avatar.jsx`, `form.jsx`, `utils.js`, `button.jsx`, `menubar.jsx`, `DashboardLayout.js`, `LoginPage.js`, `command.jsx`, `context-menu.jsx`, `table.jsx`, `breadcrumb.jsx`, `drawer.jsx`, `ManuaisPage.js`, `navigation-menu.jsx`, `sheet.jsx`, `toggle-group.jsx`, `alert.jsx`, `dropdown-menu.jsx`, `useAuth`, `input-otp.jsx`, `alert-dialog.jsx`?**
+  _High betweenness centrality (0.040) - this node is a cross-community bridge._
+- **What connects `Project Status: [0% Complete]`, `What Was Shipped Yesterday`, `Feature Completion Breakdown` to the rest of the system?**
+  _333 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `server.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.039240506329113925 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.04426559356136821 - nodes in this community are weakly interconnected._
 - **Should `devDependencies` be split into smaller, more focused modules?**
   _Cohesion score 0.0425531914893617 - nodes in this community are weakly interconnected._
 - **Should `SupabaseCollection` be split into smaller, more focused modules?**

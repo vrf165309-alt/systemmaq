@@ -302,10 +302,17 @@ def setup_manuais_routes(api_router: APIRouter, db, verify_token):
             logger.error(f"Storage download failed: {e}")
             raise HTTPException(status_code=500, detail="Erro ao baixar arquivo")
 
+        # RFC 5987: Content-Disposition não suporta latin-1. Nome com
+        # cedilha/acento (comum em PT-BR) quebrava com UnicodeEncodeError.
+        # Enviamos filename ASCII-safe + filename* com encoding UTF-8.
+        from urllib.parse import quote
+        raw_name = doc.get("original_filename") or f"manual-{manual_id}"
+        ascii_name = raw_name.encode('ascii', 'ignore').decode('ascii') or 'manual.bin'
+        utf8_name = quote(raw_name)
         return Response(
             content=data,
             media_type=doc.get("content_type", "application/octet-stream"),
-            headers={"Content-Disposition": f'inline; filename="{doc["original_filename"]}"'}
+            headers={"Content-Disposition": f'inline; filename="{ascii_name}"; filename*=UTF-8\'\'{utf8_name}'}
         )
 
     @api_router.get("/manuais/{manual_id}/slide/{slide_num}")

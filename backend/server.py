@@ -1458,8 +1458,14 @@ async def get_service_orders(
         or_clause = ",".join(f"{f}.ilike.{search_pattern}" for f in or_fields)
         query["_raw_or"] = or_clause
     
-    # Clamp limit to max 30 to minimize egress
-    limit = min(max(limit, 1), 30)
+    # Clamp limit: por padrão 30 (economia de egress); mas o modal de
+    # Roteirização (que passa `exclude_status`) precisa carregar TODAS as
+    # OSs ativas para filtrar por cidade/bairro/status no cliente — sobe
+    # o cap para 5000 nesse caso.
+    if exclude_status:
+        limit = min(max(limit, 1), 5000)
+    else:
+        limit = min(max(limit, 1), 30)
     skip = (max(page, 1) - 1) * limit
     
     # Define minimal projection for list view (reduce egress dramatically)
@@ -1669,7 +1675,7 @@ async def get_overdue_at(_: dict = Depends(verify_token)):
         {"_id": 0, "os_number": 1, "customer_name": 1, "brand": 1, "model": 1, "product": 1,
          "registration_date": 1, "attendance_date": 1, "created_at": 1, "city": 1, "neighborhood": 1, "phone1": 1, "status": 1}
     ).to_list(10000)
-    
+
     now = datetime.now(timezone.utc)
     overdue = []
     for o in orders:

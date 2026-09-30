@@ -23,12 +23,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
-from motor.motor_asyncio import AsyncIOMotorClient
 import os
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
+# CRÍTICO: usar o MESMO adapter que o server.py (Supabase). Antes usávamos
+# `AsyncIOMotorClient` (MongoDB local) — mas o app real vive no Supabase.
+# Isso causava o scraper manual a escrever no MongoDB (que ninguém lê),
+# enquanto o frontend seguia apontando pro Supabase → OSs "capturadas" mas
+# invisíveis no sistema. Descoberto 11/09/2026 investigando as 5 OSs
+# faltando (72804679, 72788337, 72778815, 72753931, 72750634) que o
+# scraper "capturava com sucesso" mas nunca apareciam no painel.
+from supabase_db import db
 from telecontrol_scraper import scraper_hisense, scraper_hq
 
 logging.basicConfig(
@@ -47,9 +54,8 @@ def validate_date(value: str) -> str:
 
 
 async def run_manual_sync(start_date: str, end_date: str, source: str):
-    mongo_url = os.environ['MONGO_URL']
-    client = AsyncIOMotorClient(mongo_url)
-    db = client[os.environ['DB_NAME']]
+    # `db` já foi importado do supabase_db no topo — é o MESMO objeto que
+    # o server.py usa em produção. Não criar um cliente novo aqui.
 
     targets = []
     if source in ("hisense", "all"):
@@ -77,17 +83,19 @@ async def run_manual_sync(start_date: str, end_date: str, source: str):
         finally:
             await scraper.close_browser()
 
-    # Registra esse sync manual no histórico, marcado como manual para diferenciar do automático
-    await db.sync_logs.insert_one({
-        "id": f"manual-sync-{datetime.now().timestamp()}",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "status": "manual",
-        "source_scope": source,
-        "date_range": f"{start_date} a {end_date}",
-        "completed_at": datetime.now(timezone.utc).isoformat()
-    })
-
-    client.close()
+    # Registra esse sync manual no histórico, marcado como manual para diferenciar do automático.
+    # source_scope não existe no schema atual da tabela sync_logs; guardamos
+    # a informação dentro do date_range pra não travar a inserção.
+    try:
+        await db.sync_logs.insert_one({
+            "id": f"manual-sync-{datetime.now().timestamp()}",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "status": "manual",
+            "date_range": f"[{source}] {start_date} a {end_date}",
+            "completed_at": datetime.now(timezone.utc).isoformat()
+        })
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Falha opcional ao registrar sync_log: {e}")
 
 
 if __name__ == "__main__":

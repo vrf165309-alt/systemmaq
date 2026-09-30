@@ -1,16 +1,16 @@
 {
   ".emergent/cron/dispatch_webhook.sh": {
-    "mtime": 1788133422.9897623,
+    "mtime": 1788142920.1126187,
     "ast_hash": "ea59c1bd709230292f41050e93dfa946",
     "semantic_hash": "ea59c1bd709230292f41050e93dfa946"
   },
   ".emergent/cron/watch_crons.sh": {
-    "mtime": 1788133423.0067623,
+    "mtime": 1788142920.1256187,
     "ast_hash": "1071ad1de232d3d12dea92619ce92699",
     "semantic_hash": "1071ad1de232d3d12dea92619ce92699"
   },
   ".emergent/cron/webhook_crond.sh": {
-    "mtime": 1788133422.9967623,
+    "mtime": 1788142920.1196187,
     "ast_hash": "a5414eb2f0aba69421eef8c4c2aa8954",
     "semantic_hash": "a5414eb2f0aba69421eef8c4c2aa8954"
   },
@@ -80,8 +80,8 @@
     "semantic_hash": "fdaa4c39d58814e9d8f7cdfadc21a9ab"
   },
   "backend/server.py": {
-    "mtime": 1788133104.8747673,
-    "ast_hash": "779e11e5dc94c5759e97eaceabf7830f",
+    "mtime": 1788142857.1306195,
+    "ast_hash": "12a611a5bfaccd170b09cde0bf88f743",
     "semantic_hash": ""
   },
   "backend/supabase_db.py": {
@@ -185,8 +185,8 @@
     "semantic_hash": "62039d1f8d9bee71c570837130168345"
   },
   "frontend/src/components/SignatureModal.js": {
-    "mtime": 1788133465.4617617,
-    "ast_hash": "19152d50bfe301d3ae15e82a2f59b210",
+    "mtime": 1788142796.3556206,
+    "ast_hash": "c5147b14f72443c25097ea90fa009635",
     "semantic_hash": ""
   },
   "frontend/src/components/SignatureViewModal.js": {
@@ -610,8 +610,8 @@
     "semantic_hash": ""
   },
   "memory/PRD.md": {
-    "mtime": 1788133573.84276,
-    "ast_hash": "780c84a8f3895bd4aa85d5ef41a8bcd7",
+    "mtime": 1788142929.7666185,
+    "ast_hash": "c5ae737db46ed2eff7cb495c293cb5c1",
     "semantic_hash": ""
   },
   "memory/graphify_usage.md": {
@@ -782,6 +782,16 @@
   "frontend/src/pages/PublicSignPage.js": {
     "mtime": 1788133203.9817657,
     "ast_hash": "2a141d11a3ed9314c5330ca63e6276e0",
+    "semantic_hash": ""
+  },
+  "JULES_REPORT.md": {
+    "mtime": 1788141946.1026337,
+    "ast_hash": "3621e66ecb99fd22ee609e2f9d8bd604",
+    "semantic_hash": ""
+  },
+  "deployer-agent-docs/RCA_f694aa85-7a01-47c8-9324-88e4a35cfc52.MD": {
+    "mtime": 1788134490.0707464,
+    "ast_hash": "f528da93d226959dc9649e10909e1b65",
     "semantic_hash": ""
   }
 }

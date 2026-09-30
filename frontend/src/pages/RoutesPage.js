@@ -167,6 +167,41 @@ const buildTechIconSVG = (heading, techName = '', src = MOTO_IMG_URL) => {
   </svg>`;
 };
 
+// Google Maps-style navigation arrow (blue chevron). Used for the technician
+// self-view during active navigation — matches the AA-style arrow the user
+// referenced. Rotates on `heading` (degrees, 0 = North). Also draws a soft
+// blue accuracy halo behind so the arrow feels anchored in the map.
+const buildNavArrowSVG = (heading = 0, techName = '') => {
+  const rot = Number.isFinite(heading) ? heading : 0;
+  const arrow = `
+    <g transform="translate(36,36) rotate(${rot})">
+      <!-- soft halo -->
+      <circle cx="0" cy="0" r="30" fill="#1a73e8" fill-opacity="0.18"/>
+      <circle cx="0" cy="0" r="18" fill="#1a73e8" fill-opacity="0.35"/>
+      <!-- outer white border -->
+      <path d="M0,-22 L16,14 L0,6 L-16,14 Z"
+            fill="#ffffff"/>
+      <!-- inner blue arrow -->
+      <path d="M0,-18 L13,12 L0,5 L-13,12 Z"
+            fill="#1a73e8" stroke="#0b57d0" stroke-width="1"/>
+    </g>`;
+  if (!techName) {
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72" width="72" height="72">${arrow}</svg>`;
+  }
+  const safeName = String(techName).replace(/[<>&"']/g, ' ').slice(0, 24);
+  const textWidth = Math.max(60, safeName.length * 7.2 + 22);
+  const canvasW = Math.max(textWidth, 72);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasW} 100" width="${canvasW}" height="100">
+    <g transform="translate(${(canvasW - textWidth) / 2}, 2)">
+      <rect x="0" y="0" rx="9" ry="9" width="${textWidth}" height="22" fill="#111827" stroke="#fff" stroke-width="2"/>
+      <text x="${textWidth / 2}" y="15" font-family="Arial,sans-serif" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">[ ${safeName} ]</text>
+    </g>
+    <g transform="translate(${(canvasW - 72) / 2}, 28)">
+      <svg width="72" height="72" viewBox="0 0 72 72">${arrow}</svg>
+    </g>
+  </svg>`;
+};
+
 // === TECHNICIAN COMBOBOX (shared by Create/Edit/View modals) ===
 const TechnicianCombobox = ({ value, onChange, technicians, testId }) => {
   const [open, setOpen] = React.useState(false);
@@ -277,8 +312,7 @@ const RouteMapDialog = ({ open, onClose, orders, routeName, token, routeId, user
   const [mapCenter, setMapCenter] = useState({ lat: BASE_LAT, lng: BASE_LNG });
   const polylineRef = useRef([]);
   const markersRef = useRef([]);
-  const locationMarkerRef = useRef(null);
-  const watchIdRef = useRef(null);
+  const locationMarkerRef = useRef(null);  const watchIdRef = useRef(null);
   const channelRef = useRef(null);
   const prevPosRef = useRef(null);
   const animFrameRef = useRef(null);
@@ -298,6 +332,11 @@ const RouteMapDialog = ({ open, onClose, orders, routeName, token, routeId, user
   // Admin-mirror: marker for the technician's live position when admin views the map.
   const adminLiveMarkerRef = useRef(null);
   const adminLivePollRef = useRef(null);
+  // Última leitura de heading efetiva (0-360). Usada quando o GPS não devolve
+  // heading (celular parado / hardware não fornece) e para o botão "Centralizar"
+  // apontar a câmera na direção correta. Preenchida por GPS (speed>3km/h) OU
+  // pelo evento `deviceorientation` (bússola/magnetômetro do dispositivo).
+  const headingRef = useRef(0);
 
   // Keep refs in sync with state
   useEffect(() => { followModeRef.current = followMode; }, [followMode]);
@@ -742,19 +781,24 @@ const RouteMapDialog = ({ open, onClose, orders, routeName, token, routeId, user
       (pos) => {
         const newLat = pos.coords.latitude;
         const newLng = pos.coords.longitude;
-        const heading = pos.coords.heading || 0;
+        const gpsHeading = pos.coords.heading;
         const speed = (pos.coords.speed || 0) * 3.6;
+        // Heading efetivo: GPS quando o veículo está em movimento (>3km/h),
+        // senão mantém o último valor conhecido (que pode ter vindo do
+        // magnetômetro via `deviceorientation`). Isso evita "spins" quando
+        // o técnico está parado num semáforo.
+        if (Number.isFinite(gpsHeading) && speed > 3) headingRef.current = gpsHeading;
+        const heading = headingRef.current || 0;
 
-        const motoSrc = _motoBase64Cache || MOTO_IMG_URL;
-        const svgIcon = buildTechIconSVG(heading, isTechnician ? userName : '', motoSrc);
-        // Anchor: y depends on whether label is present (label adds ~28px above the moto)
+        // Ícone estilo Google Maps (seta azul de navegação). Rotaciona pelo heading.
+        const svgIcon = buildNavArrowSVG(heading, isTechnician ? userName : '');
         const labelOffset = isTechnician && userName ? 28 : 0;
-        const iconWidth = isTechnician && userName ? Math.max(60, String(userName).length * 7.2 + 22) : 56;
-        const iconHeight = isTechnician && userName ? 86 : 56;
+        const iconWidth = isTechnician && userName ? Math.max(72, String(userName).length * 7.2 + 22) : 72;
+        const iconHeight = isTechnician && userName ? 100 : 72;
         const iconData = {
           url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svgIcon)}`,
           scaledSize: new window.google.maps.Size(iconWidth, iconHeight),
-          anchor: new window.google.maps.Point(iconWidth / 2, labelOffset + 28),
+          anchor: new window.google.maps.Point(iconWidth / 2, labelOffset + 36),
         };
 
         if (!locationMarkerRef.current) {
@@ -775,14 +819,22 @@ const RouteMapDialog = ({ open, onClose, orders, routeName, token, routeId, user
           prevPosRef.current = { lat: newLat, lng: newLng };
         }
 
-        // Auto-follow: center map on technician (offset to lower third)
+        // Auto-follow: câmera "por trás do técnico" (tilt 60° + heading do
+        // sentido de movimento) com zoom próximo (18) — estilo Google Maps.
+        // O panTo com offsetLat coloca a seta no terço inferior da tela,
+        // deixando espaço para ver o próximo trecho da rota à frente.
         if (followModeRef.current) {
           const currentZoom = map.getZoom();
-          const navZoom = currentZoom < 15 ? 17 : currentZoom;
-          if (currentZoom < 15) map.setZoom(navZoom);
-          // Offset center so moto appears in lower third
-          const offsetLat = 0.0008 * Math.pow(2, 17 - navZoom);
+          const navZoom = currentZoom < 17 ? 18 : currentZoom;
+          if (currentZoom < 17) map.setZoom(navZoom);
+          const offsetLat = 0.0006 * Math.pow(2, 18 - navZoom);
           map.panTo({ lat: newLat + offsetLat, lng: newLng });
+          if (typeof map.setHeading === 'function' && Number.isFinite(heading)) {
+            try { map.setHeading(heading); } catch (_) {}
+          }
+          if (typeof map.setTilt === 'function') {
+            try { map.setTilt(60); } catch (_) {}
+          }
         }
 
         // Broadcast via Supabase Realtime
@@ -870,7 +922,7 @@ const RouteMapDialog = ({ open, onClose, orders, routeName, token, routeId, user
         if (err.code === 1) toast.error('Permissão de localização negada');
         else toast.error('Erro ao obter localização');
       },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
     );
 
     // Announce start
@@ -908,6 +960,11 @@ const RouteMapDialog = ({ open, onClose, orders, routeName, token, routeId, user
     const listener = map.addListener('dragstart', () => {
       setFollowMode(false);
       followModeRef.current = false;
+      // Reset heading + tilt para o usuário olhar o mapa sem rotação
+      try {
+        if (typeof map.setHeading === 'function') map.setHeading(0);
+        if (typeof map.setTilt === 'function') map.setTilt(45);
+      } catch (_) {}
     });
     return () => window.google?.maps?.event?.removeListener(listener);
   }, [locationActive]);
@@ -916,10 +973,73 @@ const RouteMapDialog = ({ open, onClose, orders, routeName, token, routeId, user
     if (!mapRef.current || !prevPosRef.current) return;
     setFollowMode(true);
     followModeRef.current = true;
-    mapRef.current.setZoom(17);
-    const offsetLat = 0.0008;
-    mapRef.current.panTo({ lat: prevPosRef.current.lat + offsetLat, lng: prevPosRef.current.lng });
+    const map = mapRef.current;
+    // Centralizar estilo Google Maps: câmera próxima (zoom 18), inclinada
+    // (tilt 55°) e apontada no sentido do técnico (heading). Usa
+    // `setOptions` para aplicar tudo atomicamente e evitar flicker.
+    const heading = headingRef.current || 0;
+    try {
+      map.setOptions({
+        center: { lat: prevPosRef.current.lat, lng: prevPosRef.current.lng },
+        zoom: 18,
+        tilt: 55,
+        heading,
+      });
+    } catch (_) {
+      // Fallback caso setOptions falhe em versões antigas
+      map.setZoom(18);
+      map.setCenter({ lat: prevPosRef.current.lat, lng: prevPosRef.current.lng });
+      try { map.setTilt(55); } catch (__) {}
+      try { map.setHeading(heading); } catch (__) {}
+    }
+    // Coloca a seta no terço inferior da tela ("câmera atrás do técnico")
+    setTimeout(() => {
+      const offsetLat = 0.0006;
+      try { map.panBy(0, -80); } catch (_) {
+        map.panTo({ lat: prevPosRef.current.lat + offsetLat, lng: prevPosRef.current.lng });
+      }
+    }, 60);
   }, []);
+
+  // Bússola/magnetômetro do dispositivo — usado como fallback quando o GPS
+  // não devolve heading (celular parado, ou hardware que não expõe pos.coords.heading).
+  // Compatível com iOS (webkitCompassHeading) e Android (alpha).
+  useEffect(() => {
+    if (!locationActive) return;
+    let cleaned = false;
+    const handler = (e) => {
+      if (cleaned) return;
+      // iOS: webkitCompassHeading já é o rumo bússola (0=N, 90=E). Android:
+      // alpha é 0 quando aponta para Norte, mas o eixo é invertido.
+      let h = null;
+      if (typeof e.webkitCompassHeading === 'number') {
+        h = e.webkitCompassHeading;
+      } else if (typeof e.alpha === 'number') {
+        h = 360 - e.alpha;
+      }
+      if (h != null && Number.isFinite(h)) {
+        headingRef.current = h;
+      }
+    };
+    // iOS 13+ requer permissão explícita — chamamos só se estiver disponível.
+    const attach = () => window.addEventListener('deviceorientationabsolute', handler, true) ||
+                         window.addEventListener('deviceorientation', handler, true);
+    try {
+      if (typeof DeviceOrientationEvent !== 'undefined' &&
+          typeof DeviceOrientationEvent.requestPermission === 'function') {
+        DeviceOrientationEvent.requestPermission().then(state => {
+          if (state === 'granted') attach();
+        }).catch(() => attach());
+      } else {
+        attach();
+      }
+    } catch (_) { attach(); }
+    return () => {
+      cleaned = true;
+      window.removeEventListener('deviceorientationabsolute', handler, true);
+      window.removeEventListener('deviceorientation', handler, true);
+    };
+  }, [locationActive]);
 
   const drawRouteOnMap = useCallback((map, route, sorted) => {
     markersRef.current.forEach(m => m.setMap(null));
@@ -1109,6 +1229,19 @@ const RouteMapDialog = ({ open, onClose, orders, routeName, token, routeId, user
 
   const handleMapLoad = useCallback((map) => {
     mapRef.current = map;
+    // TrafficLayer — mostra o trânsito em tempo real da região (mesmas
+    // linhas verde/amarelo/vermelho que aparecem no Google Maps oficial).
+    // Guardado em `map.__trafficLayer` para evitar recriar ao remontar.
+    try {
+      if (window.google?.maps?.TrafficLayer && !map.__trafficLayer) {
+        const tl = new window.google.maps.TrafficLayer();
+        tl.setMap(map);
+        map.__trafficLayer = tl;
+      }
+      // Reforça o tilt em vector maps (as options iniciais às vezes são
+      // ignoradas até o mapa terminar o warm-up).
+      if (typeof map.setTilt === 'function') map.setTilt(45);
+    } catch (_) { /* browsers antigos sem vector map ignoram */ }
     if (routeData) drawRouteOnMap(map, routeData.route, routeData.sorted);
   }, [routeData, drawRouteOnMap]);
 
@@ -1197,9 +1330,19 @@ const RouteMapDialog = ({ open, onClose, orders, routeName, token, routeId, user
 
                   // Global gate: is there any active OS (in_progress) WITHOUT 8 photos?
                   // If yes → block starting/completing OTHER OS until photos are uploaded.
+                  // ⚠️ APENAS para OS de GARANTIA. Orçamento (e outros tipos) é
+                  //     liberado — o laudo com 8 fotos só é obrigatório em
+                  //     atendimentos de garantia (exigência da Hisense/HQ).
                   const activeOS = sorted.find(s => (stopStatuses[s.os_number] === 'in_progress'));
                   const activeOSPhotos = activeOS ? photoStatusByOS[activeOS.os_number] : null;
-                  const blockedByOther = isTechnician && activeOS && activeOS.os_number !== o.os_number && !(activeOSPhotos?.all_done);
+                  const activeSvcType = (activeOS?.service_type || '').toLowerCase();
+                  const activeIsWarranty = activeSvcType.includes('garantia');
+                  const blockedByOther = isTechnician && activeOS && activeOS.os_number !== o.os_number
+                                       && activeIsWarranty && !(activeOSPhotos?.all_done);
+
+                  // Regra local: só exige 8 fotos ao completar SE for garantia.
+                  const oSvcType = (o?.service_type || '').toLowerCase();
+                  const oIsWarranty = oSvcType.includes('garantia');
 
                   return (
                   <div key={o.os_number} className={`flex items-start gap-2 px-2 py-2 rounded-lg border transition-colors group ${statusColors[status]}`} data-testid={`map-stop-${o.os_number}`}>
@@ -1237,8 +1380,10 @@ const RouteMapDialog = ({ open, onClose, orders, routeName, token, routeId, user
                         >
                           Ver OS
                         </button>
-                        {/* Compartilhar localização — visible for pending/in_transit OSs (not in_progress/completed) */}
-                        {(status === 'pending' || status === 'arrived' || status === 'in_transit') && (
+                        {/* Compartilhar localização — SEMPRE visível: usuário pode
+                           gerar o link antes mesmo de iniciar navegação e
+                           enviar ao cliente por WhatsApp (Uber-like). */}
+                        {(
                           <button
                             onClick={async () => {
                               try {
@@ -1297,10 +1442,14 @@ const RouteMapDialog = ({ open, onClose, orders, routeName, token, routeId, user
                         {isTechnician && locationActive && status === 'in_progress' && (
                           <button
                             onClick={async () => {
-                              const fresh = await refreshPhotoStatus(o.os_number);
-                              if (!fresh?.all_done) {
-                                toast.error('Anexe todas as 8 fotos para o laudo, para conseguir concluir e avançar de atendimento', { duration: 6000 });
-                                return;
+                              // Bloqueio de 8 fotos SÓ para Garantia. Orçamento
+                              // libera direto.
+                              if (oIsWarranty) {
+                                const fresh = await refreshPhotoStatus(o.os_number);
+                                if (!fresh?.all_done) {
+                                  toast.error('Anexe todas as 8 fotos para o laudo, para conseguir concluir e avançar de atendimento', { duration: 6000 });
+                                  return;
+                                }
                               }
                               setStopStatuses(prev => {
                                 const next = { ...prev, [o.os_number]: 'completed' };
@@ -1485,6 +1634,14 @@ const RouteMapDialog = ({ open, onClose, orders, routeName, token, routeId, user
                 mapTypeControl: false,
                 streetViewControl: false,
                 gestureHandling: 'greedy',
+                // Vector map com tilt 3D + heading dinâmico (estilo Google Maps
+                // do celular). `DEMO_MAP_ID` habilita vector rendering sem
+                // precisar criar um Map ID no Google Cloud. Em produção o user
+                // pode trocar por um Map ID próprio para estilos customizados.
+                mapId: 'DEMO_MAP_ID',
+                tilt: 45,
+                heading: 0,
+                rotateControl: true,
               }}
             />
           </div>
@@ -1850,6 +2007,16 @@ const CreateRouteModal = ({ open, onClose, onCreated, token, technicianNames = [
   const [proximityOptions, setProximityOptions] = useState([]);
   const [loadingProximity, setLoadingProximity] = useState(false);
   const [showProximityPanel, setShowProximityPanel] = useState(false);
+  // Insights vindos da LLM (endpoint /api/routes/analyze-suggestions).
+  // Map: nome do grupo → {rationale, priority_score, tags, top_reason}.
+  // Preenchido em paralelo às sugestões locais — o painel usa quando chega.
+  const [aiInsights, setAiInsights] = useState({});
+  const [loadingAI, setLoadingAI] = useState(false);
+  // Chaves das sugestões selecionadas pelo usuário (multi-select).
+  // Preenchido via checkbox em cada card do painel. Ao clicar em "Aplicar",
+  // as OSs de TODAS as sugestões marcadas são unidas (dedupe) e viram a
+  // seleção do modal.
+  const [selectedSuggestions, setSelectedSuggestions] = useState(new Set());
 
   // Fetch orders with pagination (server-side)
   const [osPage, setOsPage] = useState(1);
@@ -1866,21 +2033,27 @@ const CreateRouteModal = ({ open, onClose, onCreated, token, technicianNames = [
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      params.append('limit', '10');
-      params.append('page', osPage);
-      // Fetch ALL active OS — only Finalizada/Cancelada are excluded from
-      // route eligibility. See ROUTE_EXCLUDED_STATUSES.
+      // Fetch ALL active OSs into memory. Antes: `limit=10&page=X` fazia
+      // com que os filtros de cidade/bairro/status agissem apenas nas 10
+      // OS da página atual — o usuário selecionava "Cidade = X" e via só
+      // 1 ou 0 OS. Agora traz todas as OS elegíveis (Supabase suporta o
+      // volume: ~2k-5k OS ativas na média) e a paginação de 10/pág passa
+      // a ser 100% client-side (feita no componente que renderiza o
+      // grid — ver `pagedStep2Orders` abaixo).
+      params.append('limit', '5000');
+      params.append('page', '1');
       params.append('exclude_status', ROUTE_EXCLUDED_STATUSES.join(','));
       if (osSearch) params.append('search', osSearch);
       const res = await axios.get(`${API}/service-orders?${params.toString()}`, getAuthHeader());
       const data = res.data.orders || [];
       setAllOrders(data);
       setFilteredOrders(data);
-      setOsTotalPages(res.data.total_pages || 0);
-      setOsTotalItems(res.data.total || 0);
+      // total_pages agora é derivado do total FILTRADO no cliente
+      setOsTotalPages(Math.ceil(data.length / 10) || 1);
+      setOsTotalItems(res.data.total || data.length);
     } catch { toast.error('Erro ao carregar OS'); }
     finally { setLoading(false); }
-  }, [token, osPage, osSearch]);
+  }, [token, osSearch]);
   
   useEffect(() => {
     fetchRouteOrders();
@@ -1919,6 +2092,10 @@ const CreateRouteModal = ({ open, onClose, onCreated, token, technicianNames = [
       );
     }
     setFilteredOrders(filtered);
+    // Atualiza o contador "X OS encontradas" para refletir os filtros ativos
+    // + recalcula total de páginas client-side.
+    setOsTotalItems(filtered.length);
+    setOsTotalPages(Math.max(1, Math.ceil(filtered.length / 10)));
   }, [allOrders, fStatuses, fServiceTypes, fNeighborhoods, fCities, fSearch, fStartDate, fEndDate]);
 
   // Step 2 filtered view — memoized; recalculates only when filteredOrders or
@@ -1934,6 +2111,22 @@ const CreateRouteModal = ({ open, onClose, onCreated, token, technicianNames = [
       (o.phone1 || '').toLowerCase().includes(s)
     );
   }, [filteredOrders, step2SearchDebounced]);
+
+  // Client-side pagination (10 per page) — antes o backend paginava as OS
+  // e os filtros só via as 10 da página atual (guia OSs Atrasadas + Roteiro).
+  // Agora fetchamos tudo e dividimos a lista JÁ filtrada aqui.
+  const pagedStep2Orders = React.useMemo(() => {
+    const start = (osPage - 1) * 10;
+    return step2Orders.slice(start, start + 10);
+  }, [step2Orders, osPage]);
+
+  // Recalcula total de páginas quando filtros mudam
+  React.useEffect(() => {
+    const newTotal = Math.max(1, Math.ceil(step2Orders.length / 10));
+    setOsTotalPages(newTotal);
+    if (osPage > newTotal) setOsPage(newTotal);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step2Orders.length]);
 
   const toggleOS = (osNum) => {
     setSelectedOS(prev => {
@@ -2056,13 +2249,40 @@ const CreateRouteModal = ({ open, onClose, onCreated, token, technicianNames = [
   };
 
   // Compute proximity-based suggestions for OS selection
+  //
+  // Statuses aceitos (definidos pelo usuário em 30/09/2026): 
+  //   Aguardando Analise A.T, Aguardando Conserto, Aguardando Peças,
+  //   Em auditoria, Aberta Call-Center. Antes as sugestões pegavam TODAS
+  //   as OSs (inclusive Finalizada/Cancelada) porque o filtro só rodava
+  //   nos 10 itens paginados. Agora fetchamos tudo e restringimos aqui.
+  const ROUTABLE_STATUSES = React.useMemo(() => new Set([
+    'aguardando analise a.t',
+    'aguardando análise a.t',
+    'aguardando analise',
+    'aguardando conserto',
+    'aguardando peças',
+    'aguardando pecas',
+    'em auditoria',
+    'aberta call-center',
+    'aberta call center',
+  ]), []);
+  const isRoutable = (o) => {
+    const s = (o?.status || '').toLowerCase().trim();
+    return ROUTABLE_STATUSES.has(s);
+  };
+
   const computeProximitySuggestions = async () => {
     setLoadingProximity(true);
     setShowProximityPanel(false);
+    setSelectedSuggestions(new Set()); // reset multi-select ao recomputar
     try {
-      const osNumbers = filteredOrders.map(o => o.os_number);
+      // 1. Filtra por status roteirizáveis (nunca Finalizada/Cancelada).
+      // 2. Sem limite artificial — cada grupo mostra TODAS as OS que
+      //    atendem o critério (não mais MAX_OS fixo em 4/8).
+      const routableOrders = filteredOrders.filter(isRoutable);
+      const osNumbers = routableOrders.map(o => o.os_number);
       if (osNumbers.length < 2) {
-        toast.error('Poucas OS disponíveis para sugestão');
+        toast.error('Poucas OS elegíveis (status roteirizável) para sugestão');
         setLoadingProximity(false);
         return;
       }
@@ -2070,7 +2290,7 @@ const CreateRouteModal = ({ open, onClose, onCreated, token, technicianNames = [
       const results = cacheRes.data.results || [];
       const coordMap = {};
       results.forEach(r => { if (r.cached) coordMap[r.os_number] = { lat: r.lat, lng: r.lng }; });
-      const withCoords = filteredOrders
+      const withCoords = routableOrders
         .map(o => ({ ...o, lat: coordMap[o.os_number]?.lat || o.lat, lng: coordMap[o.os_number]?.lng || o.lng }))
         .filter(o => o.lat && o.lng);
       if (withCoords.length < 2) {
@@ -2078,80 +2298,110 @@ const CreateRouteModal = ({ open, onClose, onCreated, token, technicianNames = [
         setLoadingProximity(false);
         return;
       }
-      const baseLat = -19.9245, baseLng = -43.9352;
-      const MAX_OS = Math.min(8, withCoords.length);
-      // Option 1: Closest to base
-      const byDist = [...withCoords].sort((a, b) =>
-        haversine(baseLat, baseLng, a.lat, a.lng) - haversine(baseLat, baseLng, b.lat, b.lng)
-      );
-      const opt1 = byDist.slice(0, MAX_OS);
-      // Option 2: Densest cluster from remaining
-      const opt1Set = new Set(opt1.map(o => o.os_number));
-      const remaining = withCoords.filter(o => !opt1Set.has(o.os_number));
-      let opt2;
-      if (remaining.length >= 2) {
-        const centLat = remaining.reduce((s, o) => s + o.lat, 0) / remaining.length;
-        const centLng = remaining.reduce((s, o) => s + o.lng, 0) / remaining.length;
-        opt2 = [...remaining].sort((a, b) =>
-          haversine(centLat, centLng, a.lat, a.lng) - haversine(centLat, centLng, b.lat, b.lng)
-        ).slice(0, MAX_OS);
-      } else {
-        opt2 = [...byDist].reverse().slice(0, MAX_OS);
-      }
-      // Option 3: Third region from remaining
-      const opt2Set = new Set(opt2.map(o => o.os_number));
-      const remaining2 = withCoords.filter(o => !opt1Set.has(o.os_number) && !opt2Set.has(o.os_number));
-      let opt3;
-      if (remaining2.length >= 2) {
-        const c2Lat = remaining2.reduce((s, o) => s + o.lat, 0) / remaining2.length;
-        const c2Lng = remaining2.reduce((s, o) => s + o.lng, 0) / remaining2.length;
-        opt3 = [...remaining2].sort((a, b) =>
-          haversine(c2Lat, c2Lng, a.lat, a.lng) - haversine(c2Lat, c2Lng, b.lat, b.lng)
-        ).slice(0, MAX_OS);
-      } else {
-        opt3 = [...byDist].reverse().slice(0, MAX_OS);
-      }
-      const avgDist = (arr) => arr.length === 0 ? 0 : arr.reduce((s, o) => s + haversine(baseLat, baseLng, o.lat, o.lng), 0) / arr.length;
+      // Base: Rua Descalvado 636, Renascença, Belo Horizonte
+      const baseLat = -19.8881334, baseLng = -43.9420748;
 
-      // Option 4: Priority (oldest + closest) - combines date and proximity
+      // Utilitário: parse de data para "tempo em aberto" (opt "Tempo").
       const parseDate = (o) => {
         for (const f of ['attendance_date', 'registration_date', 'created_at']) {
           const val = o[f];
           if (!val) continue;
           const s = String(val).trim();
-          for (const fmt of [/^(\d{4})-(\d{2})-(\d{2})/, /^(\d{2})\/(\d{2})\/(\d{4})/]) {
-            const m = s.match(fmt);
-            if (m) {
-              return fmt === /^(\d{2})\/(\d{2})\/(\d{4})/ 
-                ? new Date(`${m[3]}-${m[2]}-${m[1]}`) 
-                : new Date(`${m[1]}-${m[2]}-${m[3]}`);
-            }
-          }
-          try { return new Date(s); } catch { /* ignore */ }
+          const isoM = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+          if (isoM) return new Date(`${isoM[1]}-${isoM[2]}-${isoM[3]}`);
+          const brM = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+          if (brM) return new Date(`${brM[3]}-${brM[2]}-${brM[1]}`);
+          try { const d = new Date(s); if (!isNaN(d.getTime())) return d; } catch (_) {}
         }
         return new Date();
       };
-      // Score: lower = higher priority (older date + closer to base + priority flag)
       const now = Date.now();
-      const opt4 = [...withCoords].map(o => {
-        const dist = haversine(baseLat, baseLng, o.lat, o.lng);
-        const ageMs = now - parseDate(o).getTime();
-        const ageDays = Math.max(ageMs / 86400000, 0);
-        // Score: normalize distance (0-100km → 0-1) and age (0-365 days → 0-1), weight age higher
-        const distScore = Math.min(dist / 100, 1);
-        const ageScore = 1 - Math.min(ageDays / 365, 1); // older = lower score = higher priority
-        // Priority flag: if OS is marked as priority, drastically lower score (= higher priority)
-        const priorityBonus = o.priority ? -2 : 0;
-        return { ...o, _score: distScore * 0.4 + ageScore * 0.6 + priorityBonus };
-      }).sort((a, b) => a._score - b._score).slice(0, MAX_OS);
+      const daysBetween = (o) => Math.max(0, Math.floor((now - parseDate(o).getTime()) / 86400000));
 
-      setProximityOptions([
-        { name: 'Mais Próximas da Base', orders: opt1, avgDist: avgDist(opt1).toFixed(1), icon: '📍' },
-        { name: 'Região Concentrada', orders: opt2, avgDist: avgDist(opt2).toFixed(1), icon: '🗺' },
-        { name: 'Região Alternativa', orders: opt3, avgDist: avgDist(opt3).toFixed(1), icon: '🧭' },
-        { name: 'Prioridade (Antigas + Próximas)', orders: opt4, avgDist: avgDist(opt4).toFixed(1), icon: '⚡' },
-      ]);
+      // ─── OPÇÃO 1: REGIÃO (densidade) ─────────────────────────────
+      // Encontra o cluster mais denso: para cada OS, conta quantas outras
+      // OSs estão dentro de 3 km. Escolhe a OS com maior contagem como
+      // "seed" e retorna todas as OSs dentro do raio de 3km ao redor dela.
+      // Assim, "Região" agrupa OSs QUE ESTÃO PERTO UMAS DAS OUTRAS, e não
+      // perto da base.
+      const RADIUS_KM = 3;
+      let bestSeed = null;
+      let bestCount = 0;
+      for (const seed of withCoords) {
+        const c = withCoords.filter(o => haversine(seed.lat, seed.lng, o.lat, o.lng) <= RADIUS_KM).length;
+        if (c > bestCount) { bestCount = c; bestSeed = seed; }
+      }
+      const regionCluster = bestSeed
+        ? withCoords
+            .filter(o => haversine(bestSeed.lat, bestSeed.lng, o.lat, o.lng) <= RADIUS_KM)
+            .sort((a, b) => haversine(bestSeed.lat, bestSeed.lng, a.lat, a.lng) - haversine(bestSeed.lat, bestSeed.lng, b.lat, b.lng))
+        : [];
+
+      // ─── OPÇÃO 2: PRÓXIMAS DA BASE ────────────────────────────────
+      // Todas as OSs até 15 km da base, ordenadas por distância. Sem cap
+      // artificial — se houver 40 OSs dentro do raio, mostra as 40.
+      const NEAR_BASE_KM = 15;
+      const nearBase = withCoords
+        .filter(o => haversine(baseLat, baseLng, o.lat, o.lng) <= NEAR_BASE_KM)
+        .sort((a, b) => haversine(baseLat, baseLng, a.lat, a.lng) - haversine(baseLat, baseLng, b.lat, b.lng));
+
+      // ─── OPÇÃO 3: TEMPO (>10 dias em aberto) ──────────────────────
+      const overdue = withCoords
+        .map(o => ({ ...o, _days: daysBetween(o) }))
+        .filter(o => o._days > 10)
+        .sort((a, b) => b._days - a._days);
+
+      // ─── OPÇÃO 4: PRIORIDADE ──────────────────────────────────────
+      const priorityOnly = withCoords
+        .filter(o => !!o.priority)
+        .sort((a, b) => haversine(baseLat, baseLng, a.lat, a.lng) - haversine(baseLat, baseLng, b.lat, b.lng));
+
+      const avgDist = (arr) => arr.length === 0 ? 0 : arr.reduce((s, o) => s + haversine(baseLat, baseLng, o.lat, o.lng), 0) / arr.length;
+
+      const options = [
+        { key: 'regiao', name: 'Região (Cluster Denso)', orders: regionCluster, avgDist: avgDist(regionCluster).toFixed(1), icon: '🗺' },
+        { key: 'proximas', name: 'Próximas da Base', orders: nearBase, avgDist: avgDist(nearBase).toFixed(1), icon: '📍' },
+        { key: 'tempo', name: 'Tempo (>10 dias em aberto)', orders: overdue, avgDist: avgDist(overdue).toFixed(1), icon: '⏰' },
+        { key: 'prioridade', name: 'Prioridade (marcadas)', orders: priorityOnly, avgDist: avgDist(priorityOnly).toFixed(1), icon: '⚡' },
+      ];
+      setProximityOptions(options);
       setShowProximityPanel(true);
+
+      // ─── LLM enrichment (Emergent LLM Key via backend) ───
+      // A LLM nunca é exposta no frontend — apenas envia os grupos
+      // resumidos para o backend, que consulta OpenAI e devolve
+      // rationale/score/tags.
+      const buildPayload = (group) => ({
+        name: group.name,
+        avg_dist_km: parseFloat(group.avgDist) || null,
+        orders: group.orders.slice(0, 25).map(o => ({  // cap por egress
+          os_number: String(o.os_number),
+          customer_name: o.customer_name || '',
+          city: o.city || '',
+          neighborhood: o.neighborhood || '',
+          service_type: o.service_type || '',
+          status: o.status || '',
+          priority: !!o.priority,
+          days_open: daysBetween(o),
+          lat: o.lat, lng: o.lng,
+        })),
+      });
+      setLoadingAI(true);
+      setAiInsights({});
+      axios.post(`${API}/routes/analyze-suggestions`, {
+        groups: options.filter(g => g.orders.length > 0).map(buildPayload),
+        base_lat: baseLat,
+        base_lng: baseLng,
+      }, getAuthHeader())
+        .then(res => {
+          const map = {};
+          (res.data?.groups || []).forEach(g => { map[g.name] = g; });
+          setAiInsights(map);
+        })
+        .catch(err => {
+          console.warn('AI insights indisponíveis:', err?.response?.status);
+        })
+        .finally(() => setLoadingAI(false));
     } catch (err) {
       console.error('Proximity error:', err);
       toast.error('Erro ao calcular sugestões');
@@ -2160,15 +2410,42 @@ const CreateRouteModal = ({ open, onClose, onCreated, token, technicianNames = [
     }
   };
 
+  // Aplica UMA sugestão substituindo a seleção atual (comportamento antigo).
   const applyProximitySuggestion = (option) => {
     const osNums = new Set(option.orders.map(o => o.os_number));
     setSelectedOS(osNums);
-    // Sync data Map with the proximity-suggestion orders so handleOptimize can use them
     const newData = new Map();
     option.orders.forEach(o => newData.set(o.os_number, o));
     setSelectedOSData(newData);
     setShowProximityPanel(false);
     toast.success(`${osNums.size} OS selecionadas: ${option.name}`);
+  };
+
+  // Aplica MÚLTIPLAS sugestões — une as OSs (dedupe) e substitui a seleção.
+  const applyMultipleSuggestions = () => {
+    if (selectedSuggestions.size === 0) {
+      toast.error('Selecione ao menos uma sugestão');
+      return;
+    }
+    const merged = new Map();
+    proximityOptions.forEach(opt => {
+      if (selectedSuggestions.has(opt.key)) {
+        opt.orders.forEach(o => merged.set(o.os_number, o));
+      }
+    });
+    setSelectedOS(new Set(merged.keys()));
+    setSelectedOSData(merged);
+    setShowProximityPanel(false);
+    const groupNames = proximityOptions.filter(o => selectedSuggestions.has(o.key)).map(o => o.name).join(' + ');
+    toast.success(`${merged.size} OS selecionadas: ${groupNames}`);
+  };
+
+  const toggleSuggestion = (key) => {
+    setSelectedSuggestions(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
   };
 
   // Optimize route: use backend Routes API proxy + timeout protection
@@ -2534,26 +2811,115 @@ const CreateRouteModal = ({ open, onClose, onCreated, token, technicianNames = [
                 {showProximityPanel && proximityOptions.length > 0 && (
                   <div className="border rounded-lg p-3 bg-blue-50 space-y-2" data-testid="proximity-panel">
                     <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-medium text-blue-900">Seleção por Proximidade</h4>
-                      <Button variant="ghost" size="sm" onClick={() => setShowProximityPanel(false)} className="h-6 w-6 p-0">
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-                      {proximityOptions.map((opt, i) => (
-                        <button
-                          key={i}
-                          onClick={() => applyProximitySuggestion(opt)}
-                          className="p-3 rounded-lg border-2 border-blue-200 bg-white text-left hover:border-blue-500 transition-colors"
-                          data-testid={`proximity-option-${i}`}
+                      <h4 className="text-sm font-medium text-blue-900 flex items-center gap-2">
+                        Sugestões de Roteiro
+                        {loadingAI && (
+                          <span className="text-[10px] text-blue-600 font-normal flex items-center gap-1">
+                            <Loader2 className="h-3 w-3 animate-spin" /> analisando com IA…
+                          </span>
+                        )}
+                      </h4>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          onClick={applyMultipleSuggestions}
+                          disabled={selectedSuggestions.size === 0}
+                          className="h-7 text-xs"
+                          data-testid="apply-multi-suggestions"
                         >
-                          <div className="text-sm font-medium text-gray-800">{opt.name}</div>
-                          <div className="text-xs text-gray-500 mt-1">{opt.orders.length} OS &middot; ~{opt.avgDist} km da base</div>
-                          <div className="text-[10px] text-gray-400 mt-0.5 truncate">
-                            {opt.orders.slice(0, 3).map(o => o.os_number).join(', ')}{opt.orders.length > 3 ? '...' : ''}
+                          Aplicar ({selectedSuggestions.size})
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => setShowProximityPanel(false)} className="h-6 w-6 p-0">
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-blue-800/70">
+                      Marque uma ou mais sugestões para combinar (as OSs se unem automaticamente).
+                      Clique num card sem marcar para aplicar só ele.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                      {proximityOptions.map((opt, i) => {
+                        const ai = aiInsights[opt.name];
+                        const score = ai?.priority_score;
+                        const checked = selectedSuggestions.has(opt.key);
+                        const empty = opt.orders.length === 0;
+                        const tagColor = (t) => ({
+                          'perto-da-base': 'bg-emerald-100 text-emerald-700',
+                          'prioridade': 'bg-red-100 text-red-700',
+                          'atraso-alto': 'bg-amber-100 text-amber-700',
+                          'regiao-densa': 'bg-indigo-100 text-indigo-700',
+                          'alternativa': 'bg-slate-100 text-slate-700',
+                        }[t] || 'bg-gray-100 text-gray-700');
+                        return (
+                          <div
+                            key={i}
+                            className={`p-3 rounded-lg border-2 bg-white text-left transition-colors ${
+                              empty ? 'border-gray-200 opacity-50' :
+                              checked ? 'border-blue-600 ring-2 ring-blue-200' : 'border-blue-200 hover:border-blue-400'
+                            }`}
+                            data-testid={`proximity-option-${i}`}
+                          >
+                            <div className="flex items-start gap-2">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                disabled={empty}
+                                onChange={() => toggleSuggestion(opt.key)}
+                                className="mt-0.5 h-4 w-4 rounded"
+                                data-testid={`proximity-check-${opt.key}`}
+                                onClick={e => e.stopPropagation()}
+                              />
+                              <button
+                                onClick={() => !empty && applyProximitySuggestion(opt)}
+                                disabled={empty}
+                                className="flex-1 text-left"
+                                data-testid={`proximity-apply-${opt.key}`}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="text-sm font-medium text-gray-800">
+                                    {opt.icon} {opt.name}
+                                  </div>
+                                  {typeof score === 'number' && !empty && (
+                                    <span
+                                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                        score >= 75 ? 'bg-red-600 text-white' :
+                                        score >= 50 ? 'bg-amber-500 text-white' :
+                                        'bg-slate-400 text-white'
+                                      }`}
+                                      title="Prioridade sugerida pela IA (0-100)"
+                                    >
+                                      IA {Math.round(score)}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                  {empty ? 'Sem OSs' : `${opt.orders.length} OS · ~${opt.avgDist} km da base`}
+                                </div>
+                                {ai?.rationale && !empty && (
+                                  <div className="text-[11px] text-slate-700 mt-1.5 leading-snug line-clamp-3">
+                                    {ai.rationale}
+                                  </div>
+                                )}
+                                {ai?.tags && ai.tags.length > 0 && !empty && (
+                                  <div className="mt-1.5 flex flex-wrap gap-1">
+                                    {ai.tags.slice(0, 4).map((t, j) => (
+                                      <span key={j} className={`text-[9px] px-1.5 py-0.5 rounded-full ${tagColor(t)}`}>
+                                        {t}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                                {!empty && (
+                                  <div className="text-[10px] text-gray-400 mt-1 truncate">
+                                    {opt.orders.slice(0, 3).map(o => o.os_number).join(', ')}{opt.orders.length > 3 ? '...' : ''}
+                                  </div>
+                                )}
+                              </button>
+                            </div>
                           </div>
-                        </button>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -2586,7 +2952,7 @@ const CreateRouteModal = ({ open, onClose, onCreated, token, technicianNames = [
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {step2Orders.map(o => (
+                      {pagedStep2Orders.map(o => (
                         <tr key={o.os_number} className={`hover:bg-gray-50 cursor-pointer ${selectedOS.has(o.os_number) ? 'bg-blue-50' : ''}`}
                             onClick={() => toggleOS(o.os_number)}>
                           <td className="p-2"><Checkbox checked={selectedOS.has(o.os_number)} /></td>
@@ -2605,7 +2971,7 @@ const CreateRouteModal = ({ open, onClose, onCreated, token, technicianNames = [
 
                 {/* Mobile cards - visible only on small screens */}
                 <div className="sm:hidden space-y-2">
-                  {step2Orders.map(o => (
+                  {pagedStep2Orders.map(o => (
                     <div
                       key={o.os_number}
                       onClick={() => toggleOS(o.os_number)}

@@ -507,10 +507,53 @@ class TelecontrolScraper:
             while True:
                 logger.info(f"Scraping page {page_num}...")
 
-                page_orders = await self._extract_orders_from_page(page)
+                page_orders_result = await self._extract_orders_from_page(page)
+                # Compat: extração antiga retornava list; agora retorna
+                # { orders: [...], diagnostic: {...} } para expor QUANTAS
+                # linhas foram silenciosamente descartadas e por quê.
+                if isinstance(page_orders_result, dict):
+                    page_orders = page_orders_result.get('orders', [])
+                    diagnostic = page_orders_result.get('diagnostic', {}) or {}
+                else:
+                    page_orders = page_orders_result or []
+                    diagnostic = {}
+                if diagnostic:
+                    total = diagnostic.get('total_rows', 0)
+                    extracted = len(page_orders)
+                    dropped = total - extracted
+                    # Log dos cabeçalhos detectados — se o Telecontrol
+                    # renomear uma coluna, este log expõe rapidamente qual
+                    # nome atual usar no mapa em _extract_orders_from_page.
+                    headers = diagnostic.get('headers', [])
+                    header_map = diagnostic.get('header_map', {})
+                    if page_num == 1 and headers:
+                        logger.info(
+                            f"[{self.source_label}] Headers detectados ({len(headers)}) | offset={diagnostic.get('header_offset', 0)} "
+                            f"(thead={diagnostic.get('header_count', 0)}, tbody_cells={diagnostic.get('first_row_cell_count', 0)})"
+                        )
+                        logger.info(f"[{self.source_label}] Header→index: {header_map}")
+                        # Debug: dump primeira row com nome + valores dos campos-chave
+                        first_row_dump = diagnostic.get('first_row_dump', {})
+                        if first_row_dump:
+                            logger.info(f"[{self.source_label}] 1ª linha extraída: {first_row_dump}")
+                        thead_raw = diagnostic.get('thead_raw', [])
+                        if thead_raw:
+                            logger.info(f"[{self.source_label}] THEAD raw: {thead_raw}")
+                    if dropped > 0:
+                        logger.warning(
+                            f"[{self.source_label}] Page {page_num}: dropped {dropped} of {total} rows "
+                            f"during extraction — few_cells={diagnostic.get('skipped_few_cells', 0)}, "
+                            f"no_os_number={diagnostic.get('skipped_no_os_number', 0)}, "
+                            f"non_numeric={diagnostic.get('skipped_non_numeric_os', [])[:5]}, "
+                            f"parse_errors={diagnostic.get('parse_errors', 0)}"
+                        )
                 if page_orders:
                     orders.extend(page_orders)
                     logger.info(f"Page {page_num}: extracted {len(page_orders)} orders (total: {len(orders)})")
+                    # Diagnostic: dump all extracted OS numbers on this page
+                    # to help the user identify OSs missing from the DB.
+                    os_nums = [o.get('os_number', '?') for o in page_orders]
+                    logger.info(f"[{self.source_label}] Page {page_num} OS numbers: {os_nums}")
 
                 # Attempt to advance to next page. Retry up to 3x with
                 # exponential backoff on transient Playwright/network errors
@@ -589,7 +632,77 @@ class TelecontrolScraper:
         source_label = self.source_label
         return await page.evaluate('''(sourceLabel) => {
                 const orders = [];
+                const diagnostic = {
+                    total_rows: 0,
+                    skipped_few_cells: 0,
+                    skipped_no_os_number: 0,
+                    skipped_non_numeric_os: [],
+                    parse_errors: 0,
+                };
                 const rows = document.querySelectorAll('#tabelas tbody tr');
+                diagnostic.total_rows = rows.length;
+
+                // ─── Header-based column mapping ───────────────────────────────
+                // Lê o <thead> uma vez e monta um mapa {canonical_name -> index}.
+                //
+                // ⚠️  IMPORTANTE: no Telecontrol, a primeira <td> de cada linha
+                //     do tbody é um ícone de "expandir" (setinha) que NÃO tem
+                //     <th> correspondente no thead. Ou seja, tbody[i] tem
+                //     `headerCells.length + 1` colunas. Detectamos essa
+                //     diferença comparando a 1ª linha do tbody com o thead e
+                //     aplicamos um offset (headerOffset) na hora de indexar.
+                //
+                // Normalização:
+                //   • innerText → lowercase
+                //   • remove acentos (NFD + strip \u0300-\u036f)
+                //   • colapsa whitespace
+                //   • trim
+                // Isso torna a extração IMUNE a mudanças de ordem/adição de
+                // colunas no Telecontrol — antes, um shift de +1 coluna
+                // deslocava nome/telefone/produto/modelo/defeito para o
+                // índice errado sem log nenhum.
+                const normalizeHeader = (s) => (s || '')
+                    .toLowerCase()
+                    .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
+                    .replace(/\\s+/g, ' ')
+                    .trim();
+                const headerIndex = {};
+                const headerCells = document.querySelectorAll('#tabelas thead th');
+                const firstRowCells = rows[0]?.querySelectorAll('td');
+                // Se tbody tem 1 célula a mais que thead → offset = 1 (ícone
+                // de expand na frente). Caso 1:1 → offset = 0.
+                const headerOffset = firstRowCells && firstRowCells.length > headerCells.length
+                    ? (firstRowCells.length - headerCells.length) : 0;
+                headerCells.forEach((th, i) => {
+                    const raw = normalizeHeader(th.innerText || '');
+                    if (raw) headerIndex[raw] = i + headerOffset;
+                });
+                diagnostic.headers = Object.keys(headerIndex);
+                diagnostic.header_offset = headerOffset;
+                diagnostic.header_count = headerCells.length;
+                diagnostic.first_row_cell_count = firstRowCells ? firstRowCells.length : 0;
+                // Dump completo do mapa nome→índice (uma linha só na 1ª página)
+                diagnostic.header_map = { ...headerIndex };
+                // Dump da 1ª row inteira (todos os campos com content de td)
+                if (firstRowCells) {
+                    diagnostic.first_row_dump = {};
+                    firstRowCells.forEach((td, i) => {
+                        const txt = (td.innerText || '').trim().substring(0, 40);
+                        if (txt) diagnostic.first_row_dump['cell_' + i] = txt;
+                    });
+                }
+                // Dump raw dos <th> COM colspan/rowspan/hidden — pra identificar
+                // quem está causando o desalinhamento entre thead e tbody.
+                diagnostic.thead_raw = [];
+                headerCells.forEach((th, i) => {
+                    diagnostic.thead_raw.push({
+                        i: i,
+                        text: (th.innerText || '').trim().substring(0, 30),
+                        colspan: th.getAttribute('colspan') || '1',
+                        hidden: th.hidden || th.style.display === 'none' || false,
+                        cls: th.className || '',
+                    });
+                });
                 
                 // Status color mapping - from the colored box inside the OS number cell
                 // The color indicator is in: <div class="box-legendas-os box-sm-os" style="background-color:COLOR">
@@ -645,17 +758,31 @@ class TelecontrolScraper:
                     "rgb(139, 0, 0)": "OS Cancelada",
                     "#B00000": "OS Cancelada",
                     "#b00000": "OS Cancelada",
+                    // Tomada (retirada pelo cliente / entregue) — verde claro sage
+                    "#8FBC8F": "Tomada",
+                    "#8fbc8f": "Tomada",
+                    "rgb(143, 188, 143)": "Tomada",
                 };
                 
                 rows.forEach((row, idx) => {
                     try {
                         const cells = row.querySelectorAll('td');
-                        if (cells.length < 14) return;
+                        if (cells.length < 14) {
+                            diagnostic.skipped_few_cells++;
+                            return;
+                        }
                         
                         // Get OS number from column 1
                         const osLink = cells[1]?.querySelector('a');
                         const osNumber = osLink ? osLink.innerText.trim() : cells[1]?.innerText?.trim() || '';
-                        if (!osNumber || !/^\\d+$/.test(osNumber)) return;
+                        if (!osNumber) {
+                            diagnostic.skipped_no_os_number++;
+                            return;
+                        }
+                        if (!/^\\d+$/.test(osNumber)) {
+                            diagnostic.skipped_non_numeric_os.push(osNumber.substring(0, 40));
+                            return;
+                        }
                         
                         // STATUS: Read from the colored box div inside the OS number cell (column 1)
                         // The status indicator is: <div class="box-legendas-os box-sm-os" style="background-color:COLOR">
@@ -689,9 +816,6 @@ class TelecontrolScraper:
                             }
                         }
                         
-                        // Situação column (13) - follow-up text (NOT the status, but useful info)
-                        const situacao = cells[13]?.innerText?.trim() || '';
-                        
                         // Diagnostic: if we could not map the color, expose it
                         // so the backend can log which colors we're missing.
                         const rawBoxColor = statusBox ? (
@@ -699,37 +823,74 @@ class TelecontrolScraper:
                             (statusBox.getAttribute('style') || '').match(/background-color:\\s*([^;]+)/i)?.[1] ||
                             window.getComputedStyle(statusBox).backgroundColor || ''
                         ) : '';
-                        
-                        // Get type of service (Tipo de Atendimento) from column 8
-                        const serviceType = cells[8]?.innerText?.trim() || '';
-                        
-                        // Get customer name from CONSUMIDOR column (16)
-                        const customerName = cells[16]?.innerText?.trim() || '';
-                        
-                        // Get product description (22)
-                        const product = cells[22]?.innerText?.trim() || '';
-                        
-                        // Get model/reference (21)
-                        const model = cells[21]?.innerText?.trim() || '';
-                        
-                        // Get city (19) - fallback to "não capturado" if empty
-                        const city = cells[19]?.innerText?.trim() || 'não capturado';
-                        
-                        // Get state (20)
-                        const state = cells[20]?.innerText?.trim() || '';
-                        
-                        // Get phone (15)
-                        const phone = cells[15]?.innerText?.trim() || '';
-                        
-                        // Get defect (9 - Defeito Reclamado Cliente)
-                        const defect = cells[9]?.innerText?.trim() || '';
-                        
-                        // Get serial number (2)
-                        const serialNumber = cells[2]?.innerText?.trim() || '';
-                        
-                        // Get date fields
-                        const registrationDate = cells[3]?.innerText?.trim() || '';
-                        const scheduledDate = cells[4]?.innerText?.trim() || '';
+
+                        // ------------------------------------------------------------------
+                        // HEADER-BASED COLUMN MAPPING (11/09/2026):
+                        // Antes usávamos índices fixos (cells[16], cells[17], ...) que
+                        // quebravam TODA VEZ que o Telecontrol adicionava/removia uma
+                        // coluna (2 vezes em uma semana). Agora lemos o <thead> uma vez
+                        // e mapeamos por NOME da coluna — imune a mudanças de layout.
+                        //
+                        // O mapa `headerIndex` é construído fora do forEach das linhas
+                        // (uma vez só) e usa uma versão normalizada do texto do header
+                        // (lowercase, sem acentos, trim) como chave.
+                        // ------------------------------------------------------------------
+
+                        // ─── Column resolution ───────────────────────────────
+                        // Offset FIXO de +1: o thead do Telecontrol tem uma
+                        // <th> "sorting_asc" extra no índice 0 que o tbody
+                        // não replica (só tem a célula de expand). Efeito:
+                        // header['os']=1 mas cell[1] JÁ é o OS number
+                        // porque a célula de expand coincidentemente
+                        // ocupa cell[0] enquanto a <th> vazia extra
+                        // consome header[0]. Para TODAS as outras colunas,
+                        // o offset é +1 (cell = header_index + 1).
+                        //
+                        // Provas empíricas colhidas em 11/09/2026 (dump da
+                        // 1ª row + thead raw): header['consumidor']=17,
+                        // cell[17]=telefone, cell[18]=nome. Idem para
+                        // referencia/descricao/cidade/estado/etc.
+                        //
+                        // Se um dia o Telecontrol remover a <th> extra e
+                        // o alinhamento voltar 1:1, basta trocar +1 por 0.
+                        const cellOffset = 1;
+
+                        // Fallback para índices legados caso o header não
+                        // seja encontrado (algum dia o Telecontrol pode
+                        // renomear uma coluna).
+                        const col = (canonical, legacyIndex) => {
+                            const idx = headerIndex[canonical];
+                            if (idx !== undefined && cells[idx + cellOffset]) {
+                                return cells[idx + cellOffset].innerText.trim();
+                            }
+                            return legacyIndex !== undefined && cells[legacyIndex]
+                                ? cells[legacyIndex].innerText.trim() : '';
+                        };
+
+                        const situacao = col('situacao', 14);
+                        const serviceType = col('tipo de atendimento', 9);
+                        // Nome do cliente: Hisense chama de "consumidor",
+                        // HQ chama de "nome". Ambos os aliases.
+                        const customerName = col('consumidor', 17) || col('nome', 17);
+                        // Produto: Hisense divide em "descrição" + "referência",
+                        // HQ tem só um campo "produto".
+                        const product = col('descricao do produto', 23)
+                                    || col('descricao', 23)
+                                    || col('produto', 23);
+                        // Referência do Produto = modelo (só Hisense)
+                        const model = col('referencia do produto', 22) || col('referencia', 22);
+                        const city = col('cidade', 20) || 'não capturado';
+                        const state = col('estado', 21);
+                        const phone = col('telefone', 16);
+                        // "Defeito Reclamado Cliente" (só existe no Hisense)
+                        const defect = col('defeito reclamado cliente', 10)
+                                    || col('defeito reclamado', 10);
+                        const serialNumber = col('serie', 3) || col('serial', 3);
+                        // Abertura = data de registro; Agendamento = próxima visita
+                        const registrationDate = col('ab', 4) || col('abertura', 4);
+                        const scheduledDate = col('data agendamento', 5)
+                                           || col('agendamento', 5)
+                                           || col('data de agendamento', 5);
                         
                         orders.push({
                             os_number: osNumber,
@@ -750,11 +911,12 @@ class TelecontrolScraper:
                             source: sourceLabel
                         });
                     } catch (e) {
+                        diagnostic.parse_errors++;
                         console.error('Error parsing row:', e);
                     }
                 });
                 
-                return orders;
+                return { orders: orders, diagnostic: diagnostic };
             }''', source_label)
     
     async def fetch_order_details(self, page: Page, os_number: str) -> Optional[Dict]:
@@ -862,12 +1024,9 @@ class TelecontrolScraper:
 
             # Serial number & opening date from detail page.
             #
-            # HQ FIX (31/07/2026): HQ list page delivers wrong values for
-            # these fields (product description in cells[2] and serial in
-            # cells[3]), so we rely on labeled fields here. The list-page
-            # values were dropped from order_summary for HQ in
-            # _sync_orders_impl. Reading here is layout-independent for
-            # both Hisense and HQ.
+            # (31/07/2026): Reading serial/abertura by label here is
+            # layout-independent and works regardless of list-page column
+            # positions.
             serial = await get_field_value("Nº de Série")
             if not serial:
                 serial = await get_field_value("Nº Série")
@@ -926,8 +1085,7 @@ class TelecontrolScraper:
 
             # Extract service type — HQ often uses "Modalidade Atendimento"
             # or just "Atendimento" instead of "Tipo de Atendimento". Try
-            # all variants so we don't fall back to the (wrong) list-page
-            # value ("CONSUMIDOR").
+            # all variants so we don't fall back to a stale value.
             service_type = await get_field_value("Tipo de Atendimento")
             if not service_type:
                 for label in ("Modalidade Atendimento", "Modalidade",
@@ -1111,6 +1269,7 @@ class TelecontrolScraper:
                 return result
             
             # Process each order
+            missing_from_db = []  # OSs que ficaram fora do banco durante este ciclo
             for order_summary in orders:
                 try:
                     os_number = order_summary["os_number"]
@@ -1121,45 +1280,67 @@ class TelecontrolScraper:
                     existing = await db.service_orders.find_one(
                         {"os_number": os_number, "source": self.source_label}
                     )
+                    logger.debug(
+                        f"[scraper {self.source_label}] OS {os_number}: existing={'yes' if existing else 'no'}"
+                    )
 
-                    # Safety check: detect cross-source collision and skip to avoid data loss.
+                    # Safety check: detect cross-source collision. Se o OS já
+                    # existe com source "local" ou "mastermaq" (criada
+                    # manualmente pelo usuário antes do scraper ver), fazemos
+                    # AUTO-MIGRATE — muda o source para o do scraper e trata
+                    # como update. Isso resolve casos onde o usuário criou a
+                    # OS manualmente e depois o Telecontrol começou a expor
+                    # o mesmo número. Se colidir com OUTRO scraper (Hisense
+                    # ↔ HQ), aí sim skip para não misturar.
                     if not existing:
                         collision = await db.service_orders.find_one(
                             {"os_number": os_number}, {"_id": 0, "os_number": 1, "source": 1}
                         )
                         if collision:
-                            logger.warning(
-                                f"[scraper {self.source_label}] os_number={os_number} already exists "
-                                f"with source={collision.get('source')}. Skipping to avoid overwriting."
-                            )
-                            result["errors"].append(
-                                f"OS {os_number} colide com source {collision.get('source')}; ignorada para preservar dados."
-                            )
-                            continue
-                    
-                    # HQ TABLE LAYOUT FIX (31/07/2026):
-                    # The list-page parser _extract_orders_from_page uses HARDCODED
-                    # cell indices (cells[2]=serial, cells[3]=date, cells[8]=service_type,
-                    # cells[9]=defect, etc.) that only match the HISENSE table layout.
-                    # HQ's table has columns in different positions, so these fixed
-                    # indices pull the WRONG data (user report 31/07):
-                    #   service_type ← "CONSUMIDOR"          (was reading customer name column)
-                    #   serial_number ← "83773 - REFRIGERADOR..." (was reading product col)
-                    #   registration_date ← serial number    (was reading serial col)
-                    #   reported_defect ← customer phone     (was reading phone col)
-                    # Rather than guess HQ's real column positions (which requires
-                    # a valid HQ session to inspect the DOM), we surgically DROP
-                    # these fields from the summary for HQ syncs. `fetch_order_details`
-                    # reads them by label ("Tipo de Atendimento" / "Defeito Reclamado
-                    # Cliente" / "Nº de Série" / "Abertura" / "Observação") — that
-                    # path is layout-independent and works for both sources.
+                            other = collision.get('source') or ''
+                            if other in ('local', 'mastermaq', ''):
+                                logger.info(
+                                    f"[scraper {self.source_label}] os_number={os_number} existia com source={other!r}; "
+                                    f"MIGRANDO para {self.source_label} e tratando como update."
+                                )
+                                await db.service_orders.update_one(
+                                    {"os_number": os_number},
+                                    {"$set": {"source": self.source_label,
+                                              "updated_at": datetime.now(timezone.utc).isoformat()}}
+                                )
+                                existing = await db.service_orders.find_one(
+                                    {"os_number": os_number, "source": self.source_label}
+                                )
+                            else:
+                                logger.warning(
+                                    f"[scraper {self.source_label}] os_number={os_number} already exists "
+                                    f"with source={other!r}. Skipping to avoid overwriting."
+                                )
+                                result["errors"].append(
+                                    f"OS {os_number} colide com source {other!r}; ignorada para preservar dados."
+                                )
+                                continue
+
+                    # HQ TABLE LAYOUT FIX (re-aplicado em 11/09/2026):
+                    # HQ tem thead=16 colunas com layout diferente do Hisense
+                    # (só 14 nomes: os, produto, serie, ab, fc, os_dias,
+                    #  tipo_atend, c/r, telefone, nome, cidade, estado, nf, acao).
+                    # O offset dinâmico +1 que resolveu o Hisense NÃO funciona
+                    # para HQ — as posições reais do tbody da HQ divergem em
+                    # padrões próprios (nome vira cidade, telefone vira nome,
+                    # tipo_atend vira c/r "CONSUMIDOR", serie vira data).
                     #
-                    # For HQ the "Defeito Reclamado Cliente" label is often blank
-                    # on consumer OSs; the real defect lives in "Observação". The
-                    # get_observation_defect() helper below picks it up as fallback.
+                    # Solução segura: dropar TODOS os campos textuais do
+                    # summary da HQ e deixar o fetch_order_details (que lê o
+                    # detail page por LABELS `<td class="titulo">`, layout-
+                    # independente) preencher tudo. Só status/color/situacao
+                    # do list page são preservados — esses são confiáveis por
+                    # virem do próprio widget de cor.
                     if self.source_label == "telecontrol_hq":
                         for _bad in ("service_type", "reported_defect",
-                                     "serial_number", "registration_date"):
+                                     "serial_number", "registration_date",
+                                     "customer_name", "product", "brand",
+                                     "model", "city", "state", "phone1"):
                             order_summary.pop(_bad, None)
 
                     if existing:
@@ -1187,6 +1368,38 @@ class TelecontrolScraper:
                         # Update status if the new one is non-empty and different
                         if new_status and new_status != old_status:
                             update_fields["status"] = new_status
+                        
+                        # HQ: forcar re-fetch do detail page pra corrigir campos
+                        # que possam ter sido salvos com dados errados por versões
+                        # anteriores do scraper (bug de índice de coluna). Como
+                        # dropamos todos os campos do summary da HQ, precisamos
+                        # ler do detail page pra ter valor real de comparação.
+                        # Só disparamos o fetch se o `customer_name` do DB parece
+                        # errado (all-digits ou nomes de cidades) — para não
+                        # onerar todos os syncs.
+                        if self.source_label == "telecontrol_hq":
+                            existing_name = (existing.get("customer_name") or "").strip()
+                            looks_wrong = (
+                                existing_name.isdigit() or
+                                existing_name.upper() in ("BELO HORIZONTE", "CONTAGEM", "BETIM", "")
+                                or len(existing_name) < 4
+                            )
+                            if looks_wrong:
+                                logger.info(
+                                    f"[scraper {self.source_label}] OS {os_number}: customer_name "
+                                    f"suspeito ({existing_name!r}) — buscando detail page para corrigir"
+                                )
+                                details = await self.fetch_order_details(page, os_number)
+                                if details:
+                                    for k in ("customer_name", "product", "brand",
+                                              "model", "phone1", "service_type",
+                                              "reported_defect", "serial_number",
+                                              "registration_date", "city", "state"):
+                                        v = details.get(k)
+                                        if k == "registration_date":
+                                            v = normalize_date(v) or v
+                                        if v and v != existing.get(k, ""):
+                                            update_fields[k] = v
                         
                         # Update other fields if they have values and differ
                         # NOTE: city and state NOT updated from list page (column indices unreliable)
@@ -1222,60 +1435,82 @@ class TelecontrolScraper:
                             result["orders_updated"] += 1
                     else:
                         # Fetch full details for new order
+                        logger.info(
+                            f"[scraper {self.source_label}] OS {os_number} é NOVA — buscando detalhes…"
+                        )
                         details = await self.fetch_order_details(page, os_number)
                         
-                        if details:
-                            # Set defaults for missing fields
-                            new_order = {
-                                "id": f"tc-{os_number}",
-                                "os_number": os_number,
-                                "customer_name": details.get("customer_name") or order_summary.get("customer_name", ""),
-                                "registration_date": normalize_date(details.get("registration_date")) or datetime.now().strftime("%Y-%m-%d"),
-                                "attendance_date": normalize_date(details.get("attendance_date")),
-                                "cep": details.get("cep", ""),
-                                "address": details.get("address", ""),
-                                "number": details.get("number", ""),
-                                "neighborhood": details.get("neighborhood", ""),
-                                "city": details.get("city") or order_summary.get("city") or "não capturado",
-                                "state": details.get("state", ""),
-                                "complement": details.get("complement"),
-                                "phone1": details.get("phone1") or order_summary.get("phone1", ""),
-                                "phone2": None,
-                                "landline": None,
-                                "email": details.get("email", ""),
-                                "visit_fee": None,
-                                "reference_point": None,
-                                "service_type": details.get("service_type", ""),
-                                "product": details.get("product") or order_summary.get("product", ""),
-                                "brand": details.get("brand") or order_summary.get("brand", ""),
-                                "model": details.get("model", ""),
-                                "serial_number": details.get("serial_number", ""),
-                                "batch": details.get("batch", ""),
-                                "reported_defect": details.get("reported_defect") or order_summary.get("reported_defect", ""),
-                                "observations": None,
-                                "status": details.get("status") or order_summary.get("status", ""),
-                                "scheduling_history": details.get("scheduling_history", []),
-                                "source": self.source_label,
-                                "created_at": datetime.now(timezone.utc).isoformat(),
-                                "updated_at": datetime.now(timezone.utc).isoformat()
-                            }
-                            
-                            # Add sort_date for proper ordering
-                            reg = new_order.get("registration_date", "")
-                            sort_date = None
-                            if reg:
-                                for fmt in ["%d/%m/%Y", "%Y-%m-%d"]:
-                                    try:
-                                        sort_date = datetime.strptime(reg.strip()[:10], fmt).isoformat()
-                                        break
-                                    except Exception:
-                                        pass
-                            if not sort_date:
-                                sort_date = new_order["created_at"]
-                            new_order["sort_date"] = sort_date
-                            
-                            await db.service_orders.insert_one(new_order)
-                            result["orders_synced"] += 1
+                        if not details:
+                            # fetch_order_details já logou o traceback ao
+                            # cair no except. Aqui só marcamos o erro no
+                            # result para o dashboard/health saber que
+                            # uma OS caiu (evita o "silent drop" antigo).
+                            logger.error(
+                                f"[scraper {self.source_label}] fetch_order_details retornou vazio "
+                                f"para OS {os_number} — NÃO inserida no banco. Cliente da lista: "
+                                f"{order_summary.get('customer_name', 'N/A')!r}"
+                            )
+                            result["errors"].append(
+                                f"OS {os_number}: falha ao capturar detalhes; não inserida."
+                            )
+                            continue
+                        
+                        # Inserção normal (details válido)
+                        # Set defaults for missing fields
+                        new_order = {
+                            "id": f"tc-{os_number}",
+                            "os_number": os_number,
+                            "customer_name": details.get("customer_name") or order_summary.get("customer_name", ""),
+                            "registration_date": normalize_date(details.get("registration_date")) or datetime.now().strftime("%Y-%m-%d"),
+                            "attendance_date": normalize_date(details.get("attendance_date")),
+                            "cep": details.get("cep", ""),
+                            "address": details.get("address", ""),
+                            "number": details.get("number", ""),
+                            "neighborhood": details.get("neighborhood", ""),
+                            "city": details.get("city") or order_summary.get("city") or "não capturado",
+                            "state": details.get("state", ""),
+                            "complement": details.get("complement"),
+                            "phone1": details.get("phone1") or order_summary.get("phone1", ""),
+                            "phone2": None,
+                            "landline": None,
+                            "email": details.get("email", ""),
+                            "visit_fee": None,
+                            "reference_point": None,
+                            "service_type": details.get("service_type", ""),
+                            "product": details.get("product") or order_summary.get("product", ""),
+                            "brand": details.get("brand") or order_summary.get("brand", ""),
+                            "model": details.get("model", ""),
+                            "serial_number": details.get("serial_number", ""),
+                            "batch": details.get("batch", ""),
+                            "reported_defect": details.get("reported_defect") or order_summary.get("reported_defect", ""),
+                            "observations": None,
+                            "status": details.get("status") or order_summary.get("status", ""),
+                            "scheduling_history": details.get("scheduling_history", []),
+                            "source": self.source_label,
+                            "created_at": datetime.now(timezone.utc).isoformat(),
+                            "updated_at": datetime.now(timezone.utc).isoformat()
+                        }
+                        
+                        # Add sort_date for proper ordering
+                        reg = new_order.get("registration_date", "")
+                        sort_date = None
+                        if reg:
+                            for fmt in ["%d/%m/%Y", "%Y-%m-%d"]:
+                                try:
+                                    sort_date = datetime.strptime(reg.strip()[:10], fmt).isoformat()
+                                    break
+                                except Exception:
+                                    pass
+                        if not sort_date:
+                            sort_date = new_order["created_at"]
+                        new_order["sort_date"] = sort_date
+                        
+                        await db.service_orders.insert_one(new_order)
+                        result["orders_synced"] += 1
+                        logger.info(
+                            f"[scraper {self.source_label}] OS {os_number} INSERIDA: "
+                            f"{new_order.get('customer_name', 'N/A')}"
+                        )
                         
                         await page.wait_for_timeout(500)  # Rate limiting
                     

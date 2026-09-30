@@ -681,6 +681,94 @@ const fetchOrders = useCallback(async () => {
     await sendWhatsAppCopyUtil(order, sigData, toast);
   };
 
+  // ─── Status Quick Action ─────────────────────────────────────────
+  // Substitui o badge estático por um select-dropdown clicável + 2 botões
+  // (Finalizar / Cancelar) que mudam o status inline SEM abrir o modal.
+  // Persiste via PUT /service-orders/{os_number} (o backend faz merge dos
+  // campos e não sobrescreve o resto), propaga pra lista via
+  // applyOrderUpdates e refaz o count da guia de OSs atrasadas.
+  const StatusQuickAction = ({ order }) => {
+    const [saving, setSaving] = useState(false);
+    const colors = STATUS_COLORS[order.status] || { bg: '#F3F4F6', text: '#4B5563' };
+
+    const patch = async (newStatus) => {
+      if (saving || newStatus === order.status) return;
+      // Guarda contra os_number ausente — sem isso, a URL vira
+      // `/service-orders/` e o servidor devolve 405 (Method Not Allowed).
+      if (!order?.os_number) {
+        console.warn('StatusQuickAction: os_number ausente', order);
+        toast.error('OS sem número — não é possível alterar status');
+        return;
+      }
+      setSaving(true);
+      try {
+        // Envia APENAS o campo `status` (payload mínimo). O backend faz merge
+        // com o documento existente — evita reenviar campos stale (fotos, etc).
+        const resp = await axios.put(
+          `${API}/service-orders/${order.os_number}`,
+          { status: newStatus },
+          getAuthHeader()
+        );
+        applyOrderUpdates(order.os_number, resp.data || { status: newStatus });
+        fetchOverdue();
+        toast.success(`OS #${order.os_number}: ${newStatus}`);
+      } catch (e) {
+        toast.error('Erro ao mudar status: ' + (e?.response?.data?.detail || e.message));
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    return (
+      <div className="flex items-center gap-1 flex-wrap" onClick={(e) => e.stopPropagation()}>
+        <Select value={order.status || ''} onValueChange={patch} disabled={saving}>
+          <SelectTrigger
+            className="h-6 text-[11px] font-semibold rounded-full px-2.5 py-0 border w-auto min-w-[130px] focus:ring-2 focus:ring-offset-1"
+            style={{ backgroundColor: colors.bg, color: colors.text, borderColor: colors.text + '33' }}
+            data-testid={`card-status-select-${order.os_number}`}
+            title="Clique para mudar o status"
+          >
+            <SelectValue placeholder="Selecionar status" />
+          </SelectTrigger>
+          {/* Content é BRANCO com texto PRETO — design clean/limpo (a cor do
+              status só aparece no trigger, quando um valor está selecionado). */}
+          <SelectContent className="bg-white text-gray-900">
+            {OS_STATUSES.map(s => (
+              <SelectItem key={s} value={s} className="text-gray-900 text-xs">
+                {s}
+              </SelectItem>
+            ))}
+            {!OS_STATUSES.includes(order.status) && order.status && (
+              <SelectItem value={order.status} className="text-gray-900 text-xs">
+                {order.status}
+              </SelectItem>
+            )}
+          </SelectContent>
+        </Select>
+        <button
+          type="button"
+          onClick={() => patch('Finalizada')}
+          disabled={saving || order.status === 'Finalizada'}
+          className="text-[10px] px-2 py-0.5 rounded border border-gray-300 text-gray-600 bg-white hover:bg-emerald-100 hover:border-emerald-500 hover:text-emerald-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          data-testid={`card-finalize-${order.os_number}`}
+          title="Finalizar Ordem"
+        >
+          Finalizar
+        </button>
+        <button
+          type="button"
+          onClick={() => patch('OS Cancelada')}
+          disabled={saving || order.status === 'OS Cancelada'}
+          className="text-[10px] px-2 py-0.5 rounded border border-gray-300 text-gray-600 bg-white hover:bg-red-100 hover:border-red-500 hover:text-red-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          data-testid={`card-cancel-${order.os_number}`}
+          title="Cancelar Ordem"
+        >
+          Cancelar
+        </button>
+      </div>
+    );
+  };
+
   const getStatusBadge = (status) => {
     const colors = STATUS_COLORS[status] || { bg: '#F3F4F6', text: '#4B5563' };
     return (
@@ -1032,7 +1120,7 @@ const fetchOrders = useCallback(async () => {
                             <span className="text-base sm:text-lg font-semibold text-gray-900 flex-shrink-0">
                               OS #{order.os_number}
                             </span>
-                            {getStatusBadge(order.status)}
+                            <StatusQuickAction order={order} />
                             {order.service_type && (
                               <Badge variant="outline" className="text-xs border-purple-300 text-purple-600">
                                 {normalizeServiceType(order.service_type)}
@@ -1262,7 +1350,7 @@ const fetchOrders = useCallback(async () => {
                               <span className="text-base sm:text-lg font-semibold text-gray-900">
                                 OS #{order.os_number}
                               </span>
-                              {getStatusBadge(order.status)}
+                              <StatusQuickAction order={order} />
                               <Badge className="text-xs bg-red-600 text-white border-red-600" data-testid={`overdue-days-${order.os_number}`}>
                                 <AlertTriangle className="h-3 w-3 mr-0.5" />
                                 {order.days_waiting} dias
@@ -1810,6 +1898,7 @@ const fetchOrders = useCallback(async () => {
           onSendWhatsAppCopy={sendWhatsAppCopy}
           onOpenLaudo={handleOpenLaudo}
           onAutosaved={(merged) => applyOrderUpdates(merged?.os_number, merged)}
+          onSignatureCompleted={(merged) => applyOrderUpdates(merged?.os_number, merged)}
         />
 
         {/* Laudo Modal */}
@@ -1965,6 +2054,10 @@ const OrderDetailModal = ({ open, onClose, order, onUpdate, onWhatsApp, onMaps, 
     if (current === initialOrderRef.current) return;
 
     autoSaveTimerRef.current = setTimeout(async () => {
+      // Guarda: sem os_number, a URL fica `/service-orders/` e o servidor
+      // devolve 405. Isso pode acontecer quando o modal está reiniciando
+      // (order antigo já limpo, novo ainda não hidratou).
+      if (!order?.os_number) return;
       try {
         setAutoSaving(true);
         // Build a payload of ONLY non-photo fields. This keeps the PUT body
@@ -2234,13 +2327,26 @@ const OrderDetailModal = ({ open, onClose, order, onUpdate, onWhatsApp, onMaps, 
                           ...editedOrder,
                           signature_technician: null,
                           signature_client: null,
+                          signature_client_cpf: null,
+                          signature_client_name: null,
+                          signature_tech_name: null,
                           signature_date: null,
                           assinafy_document_id: null,
                           assinafy_status: null,
                         }, getAuthHeader());
                         setSigData(null);
-                        setEditedOrder(prev => ({ ...prev, signature_technician: null, signature_client: null, signature_date: null }));
-                        onUpdate({ ...editedOrder, signature_technician: null, signature_client: null, signature_date: null });
+                        setEditedOrder(prev => ({
+                          ...prev,
+                          signature_technician: null, signature_client: null,
+                          signature_client_cpf: null, signature_client_name: null,
+                          signature_tech_name: null, signature_date: null
+                        }));
+                        onUpdate({
+                          ...editedOrder,
+                          signature_technician: null, signature_client: null,
+                          signature_client_cpf: null, signature_client_name: null,
+                          signature_tech_name: null, signature_date: null
+                        });
                         toast.success('Assinaturas excluidas');
                       } catch (e) {
                         toast.error('Erro ao excluir assinaturas');
@@ -2252,6 +2358,20 @@ const OrderDetailModal = ({ open, onClose, order, onUpdate, onWhatsApp, onMaps, 
                     {deletingSig ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                   </Button>
                 </>
+              ) : sigData?.signature_client ? (
+                /* Estado parcial: cliente assinou por link, falta o técnico.
+                   Botão fica em destaque verde para indicar "quase lá". */
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSignModalOpen(true)}
+                  className="bg-emerald-50 border-2 border-emerald-500 text-emerald-700 hover:bg-emerald-500 hover:text-white transition-colors"
+                  data-testid="modal-complete-signature"
+                >
+                  <Check size={14} className="mr-1" />
+                  Completar Assinatura
+                  <span className="ml-1.5 text-[10px] bg-emerald-600 text-white rounded-full px-1.5 py-0">cliente ✓</span>
+                </Button>
               ) : (
                 <Button
                   variant="outline"
@@ -3152,9 +3272,28 @@ const OrderDetailModal = ({ open, onClose, order, onUpdate, onWhatsApp, onMaps, 
       getAuthHeader={getAuthHeader}
       isOverlay={isOverlay}
       onSigned={(updatedOrder) => {
-        setEditedOrder(updatedOrder);
-        setSigData({ signed: true, signature_technician: updatedOrder.signature_technician, signature_client: updatedOrder.signature_client, signature_date: updatedOrder.signature_date, order_summary: updatedOrder });
-        onUpdate(updatedOrder);
+        // Merge das assinaturas na ordem editada + preserva CPF/nome do cliente
+        // vindos do banco (podem ter sido preenchidos via link público).
+        const merged = { ...editedOrder, ...updatedOrder };
+        setEditedOrder(merged);
+        // Re-busca /signatures para pegar `signed=true` canônico e o
+        // `order_summary` completo (usado pelo "Visualizar Assinatura").
+        axios.get(`${API}/service-orders/${order.os_number}/signatures`, getAuthHeader())
+          .then(res => setSigData(res.data))
+          .catch(() => {
+            // Fallback pra estado local caso o GET falhe
+            setSigData({
+              signed: !!(merged.signature_technician && merged.signature_client),
+              signature_technician: merged.signature_technician,
+              signature_client: merged.signature_client,
+              signature_client_name: merged.signature_client_name,
+              signature_client_cpf: merged.signature_client_cpf,
+              signature_tech_name: merged.signature_tech_name,
+              signature_date: merged.signature_date,
+              order_summary: merged,
+            });
+          });
+        onUpdate(merged);
         toast.success('OS assinada e finalizada com sucesso!');
       }}
     />
