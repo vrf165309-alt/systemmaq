@@ -7,8 +7,24 @@ import re
 import json
 import logging
 import httpx
+from urllib.parse import quote as _url_quote
 
 logger = logging.getLogger(__name__)
+
+
+def _pgrst_encode(v):
+    """URL-encoda um valor para uso seguro em query strings PostgREST.
+    Necessário porque a col=eq.<value> vai direto na URL — se `value`
+    contém `#`, `&`, `?`, espaço, etc., a URL quebra.
+
+    Ex: os_number='#71693600 ' → '%2371693600%20'. Sem isso, o `#` era
+    interpretado como fragment e o filtro chegava vazio ao Supabase.
+    """
+    if v is None:
+        return ""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    return _url_quote(str(v), safe='')
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
@@ -90,12 +106,12 @@ class SupabaseCollection:
                         if isinstance(cv, dict):
                             if "$regex" in cv:
                                 pattern = cv["$regex"]
-                                or_parts.append(f"{col}.ilike.*{pattern}*")
+                                or_parts.append(f"{col}.ilike.*{_pgrst_encode(pattern)}*")
                             elif "$in" in cv:
-                                vals = ",".join(str(x) for x in cv["$in"])
+                                vals = ",".join(_pgrst_encode(x) for x in cv["$in"])
                                 or_parts.append(f"{col}.in.({vals})")
                         else:
-                            or_parts.append(f"{col}.eq.{cv}")
+                            or_parts.append(f"{col}.eq.{_pgrst_encode(cv)}")
                 if or_parts:
                     or_conditions.append(f'or=({",".join(or_parts)})')
                 continue
@@ -108,31 +124,31 @@ class SupabaseCollection:
                     if pattern.startswith("^") and pattern.endswith("$"):
                         # Exact match with regex anchors
                         clean = pattern[1:-1]
-                        parts.append(f"{col}=ilike.{clean}")
+                        parts.append(f"{col}=ilike.{_pgrst_encode(clean)}")
                     elif pattern.startswith("^"):
                         clean = pattern[1:]
-                        parts.append(f"{col}=ilike.{clean}%")
+                        parts.append(f"{col}=ilike.{_pgrst_encode(clean)}%")
                     else:
-                        parts.append(f"{col}=ilike.*{pattern}*")
+                        parts.append(f"{col}=ilike.*{_pgrst_encode(pattern)}*")
                 elif "$in" in val:
-                    vals = ",".join(f'"{x}"' if isinstance(x, str) else str(x) for x in val["$in"])
+                    vals = ",".join(f'"{_pgrst_encode(x)}"' if isinstance(x, str) else str(x) for x in val["$in"])
                     parts.append(f"{col}=in.({vals})")
                 elif "$nin" in val:
-                    vals = ",".join(f'"{x}"' if isinstance(x, str) else str(x) for x in val["$nin"])
+                    vals = ",".join(f'"{_pgrst_encode(x)}"' if isinstance(x, str) else str(x) for x in val["$nin"])
                     parts.append(f"{col}=not.in.({vals})")
                 elif "$ne" in val:
-                    parts.append(f"{col}=neq.{val['$ne']}")
+                    parts.append(f"{col}=neq.{_pgrst_encode(val['$ne'])}")
                 elif "$gte" in val and "$lte" in val:
-                    parts.append(f"{col}=gte.{val['$gte']}")
-                    parts.append(f"{col}=lte.{val['$lte']}")
+                    parts.append(f"{col}=gte.{_pgrst_encode(val['$gte'])}")
+                    parts.append(f"{col}=lte.{_pgrst_encode(val['$lte'])}")
                 elif "$gte" in val:
-                    parts.append(f"{col}=gte.{val['$gte']}")
+                    parts.append(f"{col}=gte.{_pgrst_encode(val['$gte'])}")
                 elif "$lte" in val:
-                    parts.append(f"{col}=lte.{val['$lte']}")
+                    parts.append(f"{col}=lte.{_pgrst_encode(val['$lte'])}")
             elif val is None:
                 parts.append(f"{col}=is.null")
             else:
-                parts.append(f"{col}=eq.{val}")
+                parts.append(f"{col}=eq.{_pgrst_encode(val)}")
 
         return "&".join(parts + or_conditions)
 

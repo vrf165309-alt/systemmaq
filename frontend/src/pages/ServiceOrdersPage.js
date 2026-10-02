@@ -443,7 +443,7 @@ const fetchOrders = useCallback(async () => {
     const params = new URLSearchParams(location.search);
     const osNum = params.get('os') || params.get('open');
     if (osNum) {
-      axios.get(`${API}/service-orders/${osNum}?include_photos=1`, getAuthHeader())
+      axios.get(`${API}/service-orders/${encodeURIComponent(osNum)}?include_photos=1`, getAuthHeader())
         .then(res => {
           if (res.data) {
             setSelectedOrder(res.data);
@@ -569,7 +569,7 @@ const fetchOrders = useCallback(async () => {
     // LaudoModal, webhook, scraper, another session) is visible. This is the
     // single source of truth: always trust the backend on modal open.
     try {
-      const res = await axios.get(`${API}/service-orders/${order.os_number}?include_photos=1`, getAuthHeader());
+      const res = await axios.get(`${API}/service-orders/${encodeURIComponent(order.os_number)}?include_photos=1`, getAuthHeader());
       if (res?.data) {
         setSelectedOrder(res.data);
         setOrders((prev) => prev.map((o) => (o.os_number === order.os_number ? { ...o, ...res.data } : o)));
@@ -582,7 +582,7 @@ const fetchOrders = useCallback(async () => {
     setLaudoModalOpen(true);
     // Same fresh-on-open semantics as OrderDetailModal.
     try {
-      const res = await axios.get(`${API}/service-orders/${order.os_number}?include_photos=1`, getAuthHeader());
+      const res = await axios.get(`${API}/service-orders/${encodeURIComponent(order.os_number)}?include_photos=1`, getAuthHeader());
       if (res?.data) {
         setLaudoOrder(res.data);
         setSelectedOrder((prev) => (prev && prev.os_number === order.os_number ? res.data : prev));
@@ -603,7 +603,7 @@ const fetchOrders = useCallback(async () => {
 
   const handleUpdateOrder = async (updatedData) => {
     try {
-      await axios.put(`${API}/service-orders/${selectedOrder.os_number}`, updatedData, getAuthHeader());
+      await axios.put(`${API}/service-orders/${encodeURIComponent(selectedOrder.os_number)}`, updatedData, getAuthHeader());
       toast.success('OS atualizada com sucesso!');
       fetchOrders();
       fetchOverdue();
@@ -705,7 +705,7 @@ const fetchOrders = useCallback(async () => {
         // Envia APENAS o campo `status` (payload mínimo). O backend faz merge
         // com o documento existente — evita reenviar campos stale (fotos, etc).
         const resp = await axios.put(
-          `${API}/service-orders/${order.os_number}`,
+          `${API}/service-orders/${encodeURIComponent(order.os_number)}`,
           { status: newStatus },
           getAuthHeader()
         );
@@ -1956,12 +1956,12 @@ const OrderDetailModal = ({ open, onClose, order, onUpdate, onWhatsApp, onMaps, 
       setLastSaved(null);
       // Fetch customer history
       setHistoryLoading(true);
-      axios.get(`${API}/service-orders/${order.os_number}/customer-history`, getAuthHeader())
+      axios.get(`${API}/service-orders/${encodeURIComponent(order.os_number)}/customer-history`, getAuthHeader())
         .then(res => setCustomerHistory(res.data.history || []))
         .catch(() => setCustomerHistory([]))
         .finally(() => setHistoryLoading(false));
       // Fetch signature data
-      axios.get(`${API}/service-orders/${order.os_number}/signatures`, getAuthHeader())
+      axios.get(`${API}/service-orders/${encodeURIComponent(order.os_number)}/signatures`, getAuthHeader())
         .then(res => setSigData(res.data))
         .catch(() => setSigData(null));
       // Fetch print count
@@ -2037,7 +2037,7 @@ const OrderDetailModal = ({ open, onClose, order, onUpdate, onWhatsApp, onMaps, 
   const savePhotoImmediate = useCallback(async (key, value) => {
     if (!order?.os_number) return;
     try {
-      await axios.put(`${API}/service-orders/${order.os_number}`, { [key]: value }, getAuthHeader());
+      await axios.put(`${API}/service-orders/${encodeURIComponent(order.os_number)}`, { [key]: value }, getAuthHeader());
       setLastSaved(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
     } catch (e) {
       console.error(`Save ${key} failed:`, e);
@@ -2066,7 +2066,7 @@ const OrderDetailModal = ({ open, onClose, order, onUpdate, onWhatsApp, onMaps, 
         for (const k of Object.keys(editedOrder)) {
           if (!k.startsWith('photo_')) payload[k] = editedOrder[k];
         }
-        await axios.put(`${API}/service-orders/${order.os_number}`, payload, getAuthHeader());
+        await axios.put(`${API}/service-orders/${encodeURIComponent(order.os_number)}`, payload, getAuthHeader());
         initialOrderRef.current = current;
         setLastSaved(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
         // Propagate to parent so list state / selectedOrder no longer hold a
@@ -2103,7 +2103,7 @@ const OrderDetailModal = ({ open, onClose, order, onUpdate, onWhatsApp, onMaps, 
         for (const k of Object.keys(editedOrder)) {
           if (!k.startsWith('photo_')) payload[k] = editedOrder[k];
         }
-        await axios.put(`${API}/service-orders/${order.os_number}`, payload, getAuthHeader());
+        await axios.put(`${API}/service-orders/${encodeURIComponent(order.os_number)}`, payload, getAuthHeader());
         if (onAutosaved) {
           try { onAutosaved({ ...order, ...payload }); } catch (_) {}
         }
@@ -2177,7 +2177,7 @@ const OrderDetailModal = ({ open, onClose, order, onUpdate, onWhatsApp, onMaps, 
                 size="sm"
                 onClick={() => {
                   onPrint(order, sigData);
-                  axios.post(`${API}/service-orders/${order.os_number}/print-count`, {}, getAuthHeader())
+                  axios.post(`${API}/service-orders/${encodeURIComponent(order.os_number)}/print-count`, {}, getAuthHeader())
                     .then(res => setPrintCount(res.data.print_count))
                     .catch(() => {});
                 }}
@@ -2286,7 +2286,7 @@ const OrderDetailModal = ({ open, onClose, order, onUpdate, onWhatsApp, onMaps, 
                       for (const k of Object.keys(editedOrder)) {
                         if (!k.startsWith('photo_')) payload[k] = editedOrder[k];
                       }
-                      await axios.put(`${API}/service-orders/${order.os_number}`, payload, getAuthHeader());
+                      await axios.put(`${API}/service-orders/${encodeURIComponent(order.os_number)}`, payload, getAuthHeader());
                       mergedOrder = { ...order, ...payload };
                       initialOrderRef.current = current;
                       if (onAutosaved) { try { onAutosaved(mergedOrder); } catch (_) {} }
@@ -2323,7 +2323,7 @@ const OrderDetailModal = ({ open, onClose, order, onUpdate, onWhatsApp, onMaps, 
                       if (!window.confirm('Tem certeza que deseja excluir as assinaturas?')) return;
                       setDeletingSig(true);
                       try {
-                        await axios.put(`${API}/service-orders/${order.os_number}`, {
+                        await axios.put(`${API}/service-orders/${encodeURIComponent(order.os_number)}`, {
                           ...editedOrder,
                           signature_technician: null,
                           signature_client: null,
@@ -2848,7 +2848,7 @@ const OrderDetailModal = ({ open, onClose, order, onUpdate, onWhatsApp, onMaps, 
                           // connection / closed modal doesn't lose them.
                           const photoPayload = {};
                           dataUrls.forEach((url, i) => { photoPayload[`photo_${i + 1}`] = url; });
-                          axios.put(`${API}/service-orders/${order.os_number}`, photoPayload, getAuthHeader())
+                          axios.put(`${API}/service-orders/${encodeURIComponent(order.os_number)}`, photoPayload, getAuthHeader())
                             .then(() => setLastSaved(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })))
                             .catch((err) => { console.error('Bulk photo save failed:', err); toast.error('Falha ao salvar fotos'); });
                           toast.success(`${dataUrls.length} foto(s) adicionada(s)`);
@@ -3278,7 +3278,7 @@ const OrderDetailModal = ({ open, onClose, order, onUpdate, onWhatsApp, onMaps, 
         setEditedOrder(merged);
         // Re-busca /signatures para pegar `signed=true` canônico e o
         // `order_summary` completo (usado pelo "Visualizar Assinatura").
-        axios.get(`${API}/service-orders/${order.os_number}/signatures`, getAuthHeader())
+        axios.get(`${API}/service-orders/${encodeURIComponent(order.os_number)}/signatures`, getAuthHeader())
           .then(res => setSigData(res.data))
           .catch(() => {
             // Fallback pra estado local caso o GET falhe

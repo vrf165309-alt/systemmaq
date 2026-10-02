@@ -932,7 +932,7 @@ const RouteMapDialog = ({ open, onClose, orders, routeName, token, routeId, user
   // Photos status checker (technician completion gate)
   const refreshPhotoStatus = useCallback(async (osNumber) => {
     try {
-      const res = await axios.get(`${API}/service-orders/${osNumber}/photos-status`, token ? { headers: { Authorization: `Bearer ${token}` } } : {});
+      const res = await axios.get(`${API}/service-orders/${encodeURIComponent(osNumber)}/photos-status`, token ? { headers: { Authorization: `Bearer ${token}` } } : {});
       setPhotoStatusByOS(prev => ({ ...prev, [osNumber]: res.data }));
       return res.data;
     } catch {

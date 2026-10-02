@@ -1,16 +1,16 @@
 {
   ".emergent/cron/dispatch_webhook.sh": {
-    "mtime": 1788142920.1126187,
+    "mtime": 1790741027.1610432,
     "ast_hash": "ea59c1bd709230292f41050e93dfa946",
     "semantic_hash": "ea59c1bd709230292f41050e93dfa946"
   },
   ".emergent/cron/watch_crons.sh": {
-    "mtime": 1788142920.1256187,
+    "mtime": 1790741027.1800432,
     "ast_hash": "1071ad1de232d3d12dea92619ce92699",
     "semantic_hash": "1071ad1de232d3d12dea92619ce92699"
   },
   ".emergent/cron/webhook_crond.sh": {
-    "mtime": 1788142920.1196187,
+    "mtime": 1790741027.1710432,
     "ast_hash": "a5414eb2f0aba69421eef8c4c2aa8954",
     "semantic_hash": "a5414eb2f0aba69421eef8c4c2aa8954"
   },
@@ -40,9 +40,9 @@
     "semantic_hash": "702ce2f653be87105093e2f135dff13a"
   },
   "backend/manuais_module.py": {
-    "mtime": 1784506458.4272099,
-    "ast_hash": "bd4ab1dabe8f1a90b819a0a4e4a665e1",
-    "semantic_hash": "bd4ab1dabe8f1a90b819a0a4e4a665e1"
+    "mtime": 1790736325.6530702,
+    "ast_hash": "9ac5a92a831502e0d81d470fb9d2933b",
+    "semantic_hash": ""
   },
   "backend/migrate_fix.py": {
     "mtime": 1784506458.4272099,
@@ -75,13 +75,13 @@
     "semantic_hash": "cdedf204d5b9e6ae7637c23fca57df75"
   },
   "backend/routes_module.py": {
-    "mtime": 1784506458.42821,
-    "ast_hash": "fdaa4c39d58814e9d8f7cdfadc21a9ab",
-    "semantic_hash": "fdaa4c39d58814e9d8f7cdfadc21a9ab"
+    "mtime": 1790737219.2210648,
+    "ast_hash": "704c221dbd9003015142f16e5d030c6d",
+    "semantic_hash": ""
   },
   "backend/server.py": {
-    "mtime": 1788142857.1306195,
-    "ast_hash": "12a611a5bfaccd170b09cde0bf88f743",
+    "mtime": 1790740788.0830445,
+    "ast_hash": "6fa3641a0ee5d23d076b29d640ef592b",
     "semantic_hash": ""
   },
   "backend/supabase_db.py": {
@@ -95,8 +95,8 @@
     "semantic_hash": "68e115bfeef8940d8f1918fe39df5b7a"
   },
   "backend/telecontrol_scraper.py": {
-    "mtime": 1788129133.6768267,
-    "ast_hash": "c4b38b01bf29a079049fc842df5ea3b0",
+    "mtime": 1789504770.521884,
+    "ast_hash": "126900106138137483ab6b9bffe9579e",
     "semantic_hash": ""
   },
   "backend/tracking_module.py": {
@@ -510,13 +510,13 @@
     "semantic_hash": "22ead48bad58e67d18da9e3bea469663"
   },
   "frontend/src/pages/RoutesPage.js": {
-    "mtime": 1784506458.4402099,
-    "ast_hash": "211d2c6f5a7327d44a46ea6a50f15d70",
-    "semantic_hash": "211d2c6f5a7327d44a46ea6a50f15d70"
+    "mtime": 1790740933.3070436,
+    "ast_hash": "56bc0c28daf6f2d4280eddbf37b986eb",
+    "semantic_hash": ""
   },
   "frontend/src/pages/ServiceOrdersPage.js": {
-    "mtime": 1788131727.027788,
-    "ast_hash": "a188d3f3686d800ed3655354ceb246b1",
+    "mtime": 1790741076.822043,
+    "ast_hash": "3b7045f5ee57330c9ed03c98adefadf1",
     "semantic_hash": ""
   },
   "frontend/src/pages/UsersPage.js": {
@@ -545,9 +545,9 @@
     "semantic_hash": "16f9c21b3bc11c508d30e9d374c56690"
   },
   "frontend/src/utils/printUtils.js": {
-    "mtime": 1784506458.4402099,
-    "ast_hash": "6b48257dbc84cc098d8ff88a2acb9f13",
-    "semantic_hash": "6b48257dbc84cc098d8ff88a2acb9f13"
+    "mtime": 1790736563.3810687,
+    "ast_hash": "84bee1010e13653b5d310cc31ebb1807",
+    "semantic_hash": ""
   },
   "frontend/src/utils/printingService.js": {
     "mtime": 1788131797.7057867,
@@ -570,8 +570,8 @@
     "semantic_hash": ""
   },
   ".emergent/system_deps.txt": {
-    "mtime": 1788127727.8948476,
-    "ast_hash": "3999a129894e482906bac35c31459a50",
+    "mtime": 1790733924.5070848,
+    "ast_hash": "aa95dbf63d407ad2ba29f208bdf974da",
     "semantic_hash": ""
   },
   "README.md": {
@@ -610,8 +610,8 @@
     "semantic_hash": ""
   },
   "memory/PRD.md": {
-    "mtime": 1788142929.7666185,
-    "ast_hash": "c5ae737db46ed2eff7cb495c293cb5c1",
+    "mtime": 1790741158.2960424,
+    "ast_hash": "7a3eb83cbfe61b89939b04a680eba2f8",
     "semantic_hash": ""
   },
   "memory/graphify_usage.md": {
@@ -775,8 +775,8 @@
     "semantic_hash": ""
   },
   "backend/run_sync_manual.py": {
-    "mtime": 1786740686.9282315,
-    "ast_hash": "561fb891c90cd0cd475ed247b961bf9e",
+    "mtime": 1789130642.6931598,
+    "ast_hash": "a1c0742ab8fc864fae61364910d03574",
     "semantic_hash": ""
   },
   "frontend/src/pages/PublicSignPage.js": {
@@ -785,13 +785,18 @@
     "semantic_hash": ""
   },
   "JULES_REPORT.md": {
-    "mtime": 1788141946.1026337,
-    "ast_hash": "3621e66ecb99fd22ee609e2f9d8bd604",
+    "mtime": 1789440530.7739992,
+    "ast_hash": "1f6bc2567277ceeaa8a96c72fdcb1b5f",
     "semantic_hash": ""
   },
   "deployer-agent-docs/RCA_f694aa85-7a01-47c8-9324-88e4a35cfc52.MD": {
     "mtime": 1788134490.0707464,
     "ast_hash": "f528da93d226959dc9649e10909e1b65",
+    "semantic_hash": ""
+  },
+  "manual.pdf": {
+    "mtime": 1789694997.9259648,
+    "ast_hash": "58672e565683d9216c84f2f2564b0a8f",
     "semantic_hash": ""
   }
 }

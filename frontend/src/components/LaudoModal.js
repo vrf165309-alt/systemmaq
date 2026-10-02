@@ -278,7 +278,7 @@ const LaudoModal = ({ open, onClose, order, getAuthHeader, onUpdated }) => {
       // hydrated from the authoritative Supabase copy (order prop may come
       // from the list without ?include_photos=1). Autosave stays locked
       // until this completes — see gating effect below.
-      axios.get(`${API}/service-orders/${order.os_number}?include_photos=1`, getAuthHeader())
+      axios.get(`${API}/service-orders/${encodeURIComponent(order.os_number)}?include_photos=1`, getAuthHeader())
         .then(res => {
           const fresh = res.data || {};
           setImages(prev => {
@@ -470,7 +470,7 @@ const LaudoModal = ({ open, onClose, order, getAuthHeader, onUpdated }) => {
       addIfFilled('voltage_f2_terra', fnd.voltage_f2_terra);
       addIfFilled('technician', fnd.technician);
       try {
-        await axios.put(`${API}/service-orders/${fd.os_number || order.os_number}`, osUpdate, getAuthHeader());
+        await axios.put(`${API}/service-orders/${encodeURIComponent(fd.os_number || order.os_number)}`, osUpdate, getAuthHeader());
         // Notify parent so list / OrderDetailModal stay in sync with backend.
         if (typeof onUpdated === 'function') {
           try { onUpdated(fd.os_number || order.os_number, osUpdate); } catch (_) {}
@@ -576,7 +576,7 @@ const LaudoModal = ({ open, onClose, order, getAuthHeader, onUpdated }) => {
           }
         });
         if (Object.keys(photoUpdate).length > 0) {
-          await axios.put(`${API}/service-orders/${formData.os_number}`, photoUpdate, getAuthHeader());
+          await axios.put(`${API}/service-orders/${encodeURIComponent(formData.os_number)}`, photoUpdate, getAuthHeader());
         }
       } catch (_) { /* non-fatal — draft still saved */ }
 

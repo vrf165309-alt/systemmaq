@@ -17,7 +17,7 @@ const OrderDetailOverlay = ({ open, onClose, osNumber, onOrderUpdated }) => {
 
   useEffect(() => {
     if (open && osNumber) {
-      axios.get(`${API}/service-orders/${osNumber}?include_photos=1`, getAuthHeader())
+      axios.get(`${API}/service-orders/${encodeURIComponent(osNumber)}?include_photos=1`, getAuthHeader())
         .then(res => setOrder(res.data))
         .catch(() => toast.error(`OS ${osNumber} não encontrada`));
     }
@@ -30,7 +30,7 @@ const OrderDetailOverlay = ({ open, onClose, osNumber, onOrderUpdated }) => {
 
   const handleUpdate = useCallback(async (updatedOrder) => {
     try {
-      await axios.put(`${API}/service-orders/${updatedOrder.os_number}`, updatedOrder, getAuthHeader());
+      await axios.put(`${API}/service-orders/${encodeURIComponent(updatedOrder.os_number)}`, updatedOrder, getAuthHeader());
       setOrder(updatedOrder);
       toast.success('OS atualizada');
       if (onOrderUpdated) onOrderUpdated();

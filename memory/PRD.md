@@ -301,3 +301,37 @@ Antes: `technician_signature` era OBRIGATÓRIO no `POST /signature-link` — o t
 - `/app/frontend/src/pages/ServiceOrdersPage.js` — StatusQuickAction com
   Shadcn Select, guardas de os_number, payload mínimo no PUT.
 
+
+### 22. Fix 405 nas OSs do Telecontrol com `#` no os_number — RCA
+- **Causa raiz**: OSs importadas via scraper HQ/Hisense têm `os_number` no
+  formato `'#71693600 '` (prefixo `#` + espaço final). Dois pontos de falha:
+  1. **Frontend**: ao montar a URL `${API}/service-orders/${order.os_number}`,
+     o `#` virava separador de fragmento. O browser truncava a URL em
+     `/api/service-orders/` → servidor devolvia **405 Method Not Allowed**
+     (não existe PUT em `/service-orders/`).
+  2. **Backend (`supabase_db.py`)**: mesmo quando a URL chegava correta
+     (`%23`), o filtro gerado para o Supabase (`os_number=eq.#71693600 `) ia
+     RAW na querystring. O `#` quebrava a URL do próprio PostgREST → filtro
+     chegava vazio → 404 "Ordem não encontrada".
+- **Fix frontend**: todas as 21 chamadas Axios que usam `${order.os_number}`
+  (ou similar) na URL agora envolvem o valor em `encodeURIComponent(...)`.
+  Arquivos afetados: `ServiceOrdersPage.js` (15), `LaudoModal.js` (3),
+  `OrderDetailOverlay.js` (2), `RoutesPage.js` (1).
+- **Fix backend** (`supabase_db.py`): novo helper `_pgrst_encode(v)` que
+  aplica `urllib.parse.quote(v, safe='')` em TODOS os valores que vão para
+  querystring PostgREST (`=eq.`, `=ilike.`, `=in.`, `=nin.`, `=ne.`, `=gte.`,
+  `=lte.` e também dentro de `$or`).
+- **Validado via curl**:
+  - PUT `/api/service-orders/%2371693600%20` body `{status:"Aguardando Peças"}` → **HTTP 200**
+    (resposta: `os_number='#71693600 '`, `status='Aguardando Peças'`).
+  - PUT em OS normal (27888) → **HTTP 200** (sem regressão).
+  - GET listagem → total 7054, overdue 27.
+
+**Arquivos modificados**:
+- `/app/backend/supabase_db.py` — helper `_pgrst_encode` + encode em
+  todos os filtros gerados.
+- `/app/frontend/src/pages/ServiceOrdersPage.js`
+- `/app/frontend/src/pages/RoutesPage.js`
+- `/app/frontend/src/components/LaudoModal.js`
+- `/app/frontend/src/components/OrderDetailOverlay.js`
+
