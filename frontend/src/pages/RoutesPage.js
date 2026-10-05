@@ -337,6 +337,9 @@ const RouteMapDialog = ({ open, onClose, orders, routeName, token, routeId, user
   // apontar a câmera na direção correta. Preenchida por GPS (speed>3km/h) OU
   // pelo evento `deviceorientation` (bússola/magnetômetro do dispositivo).
   const headingRef = useRef(0);
+  // Timestamp (ms) do último fix de GPS aceito. Usado para detectar saltos
+  // impossíveis entre leituras consecutivas (dMeters/dt > ~180km/h).
+  const lastFixTsRef = useRef(0);
 
   // Keep refs in sync with state
   useEffect(() => { followModeRef.current = followMode; }, [followMode]);
@@ -517,13 +520,43 @@ const RouteMapDialog = ({ open, onClose, orders, routeName, token, routeId, user
   };
 
   // Returns the minimum distance (meters) from a point to a polyline path (array of {lat,lng}).
-  // Approximates each segment with point-to-segment haversine on the closer endpoint;
-  // good enough for off-route detection (50-150m thresholds).
+  // Perpendicular point-to-polyline distance (meters). Antes só mediamos
+  // distância aos VÉRTICES, o que inflava o off-route (ex: carro a 10m da
+  // reta entre A—B mas 100m dos dois pontos → algoritmo achava 100m).
+  // Agora projetamos o ponto em cada segmento usando aproximação equiretangular
+  // (válida para distâncias curtas, erro <0.5% em até 10km). Retorna o
+  // menor valor entre todos os segmentos.
   const distanceToPath = (lat, lng, path) => {
     if (!path || path.length === 0) return Infinity;
+    if (path.length === 1) return haversine(lat, lng, path[0].lat, path[0].lng);
+    const toRad = (d) => d * Math.PI / 180;
+    const R = 6371000; // raio médio da Terra (m)
+    // Projeção equiretangular centrada em `lat` (latitude de referência)
+    const latRef = toRad(lat);
+    const cosLat = Math.cos(latRef);
+    const toXY = (p) => ({
+      x: toRad(p.lng) * R * cosLat,
+      y: toRad(p.lat) * R,
+    });
+    const P = toXY({ lat, lng });
     let min = Infinity;
-    for (let i = 0; i < path.length; i++) {
-      const d = haversine(lat, lng, path[i].lat, path[i].lng);
+    for (let i = 0; i < path.length - 1; i++) {
+      const A = toXY(path[i]);
+      const B = toXY(path[i + 1]);
+      const ABx = B.x - A.x;
+      const ABy = B.y - A.y;
+      const APx = P.x - A.x;
+      const APy = P.y - A.y;
+      const ab2 = ABx * ABx + ABy * ABy;
+      // t ∈ [0,1] é a projeção escalar de AP em AB (0 = A, 1 = B).
+      // Clamp para que fora dos limites usemos o endpoint mais próximo.
+      let t = ab2 > 0 ? (APx * ABx + APy * ABy) / ab2 : 0;
+      if (t < 0) t = 0; else if (t > 1) t = 1;
+      const Qx = A.x + t * ABx;
+      const Qy = A.y + t * ABy;
+      const dx = P.x - Qx;
+      const dy = P.y - Qy;
+      const d = Math.sqrt(dx * dx + dy * dy);
       if (d < min) min = d;
     }
     return min;
@@ -556,20 +589,17 @@ const RouteMapDialog = ({ open, onClose, orders, routeName, token, routeId, user
       navSegmentsRef.current = [];
     };
 
-    // Helper: straight-line fallback so the user sees a line immediately
-    const renderStraightFallback = () => {
-      const path = [{ lat: techLat, lng: techLng }, { lat: nextStop.lat, lng: nextStop.lng }];
-      // Keep the straight fallback ONLY if no real line is drawn yet.
-      if (navPolylineRef.current || navSegmentsRef.current.length > 0) return;
-      navPulseRef.current = new window.google.maps.Polyline({
-        path, strokeColor: '#4285F4', strokeOpacity: 0.25, strokeWeight: 14, map, zIndex: 5,
-      });
-      navPolylineRef.current = new window.google.maps.Polyline({
-        path, strokeColor: '#4285F4', strokeOpacity: 1, strokeWeight: 6, map, zIndex: 6,
-      });
-    };
-
-    renderStraightFallback();
+    // Antes desenhávamos uma linha reta Técnico→OS como fallback enquanto a
+    // API respondia. Isso dava a impressão de "atravessa prédios/rios".
+    // Agora:
+    //  1. Se já tem rota desenhada, MANTEMOS ela durante o recálculo (não
+    //     limpa o mapa só pra piscar a reta).
+    //  2. Se não tem nada ainda (primeira chamada), mostramos um banner
+    //     "Calculando rota…" ao invés da reta visualmente enganosa.
+    const hasExistingRoute = !!(navPolylineRef.current || navSegmentsRef.current.length > 0);
+    if (!hasExistingRoute) {
+      setNextInstruction('Calculando rota...');
+    }
 
     try {
       const res = await axios.post(`${API}/routes/nav-leg`, {
@@ -580,7 +610,9 @@ const RouteMapDialog = ({ open, onClose, orders, routeName, token, routeId, user
       const data = res.data || {};
       const encoded = data.encoded_polyline;
       if (!encoded || !window.google.maps.geometry?.encoding) {
-        return; // straight fallback already drawn
+        // Mantém a rota antiga desenhada (não limpa). Mostra aviso textual.
+        if (!hasExistingRoute) setNextInstruction('Rota indisponível - verifique conexão');
+        return;
       }
       const fullPath = window.google.maps.geometry.encoding.decodePath(encoded)
         .map(p => ({ lat: p.lat(), lng: p.lng() }));
@@ -636,12 +668,38 @@ const RouteMapDialog = ({ open, onClose, orders, routeName, token, routeId, user
         navSegmentsRef.current.push(pl);
       });
 
-      // Aggregate ETA based on duration_in_traffic
+      // Aggregate ETA based on duration_in_traffic (quando disponível).
+      // `duration_seconds` = tempo em condições normais; `duration_in_traffic_seconds`
+      // = tempo real considerando trânsito atual. ANTES mandávamos o mesmo valor
+      // nos dois campos — admin perdia a diferença entre o planejado e o real.
       const distM = data.distance_meters || 0;
       const durSec = data.duration_seconds || 0;
+      const durTrafficSec = data.duration_in_traffic_seconds || data.duration_seconds || 0;
       const distText = distM > 1000 ? `${(distM / 1000).toFixed(1)} km` : `${Math.round(distM)} m`;
-      const durMin = Math.max(1, Math.round(durSec / 60));
+      // Mostra o tempo COM trânsito, não o idealizado.
+      const durMin = Math.max(1, Math.round(durTrafficSec / 60));
       setNextInstruction(`${nextStop.customer_name} - ${distText}, ${durMin} min`);
+
+      // Cor agregada do trânsito ao longo da rota (média ponderada por extensão
+      // de segmento). Backend/admin esperam: 'green' | 'yellow' | 'red' | 'lightblue'.
+      // ANTES mandávamos 'segmented' — não existia no mapa de cores do admin,
+      // caía no azul padrão sem avisar que havia trânsito pesado.
+      const aggTrafficColor = (() => {
+        const intervals = Array.isArray(data.speed_reading_intervals) ? data.speed_reading_intervals : [];
+        if (intervals.length === 0) return 'green';
+        const w = { TRAFFIC_JAM: 0, SLOW: 0, NORMAL: 0 };
+        intervals.forEach(iv => {
+          const start = Math.max(0, iv.startPolylinePointIndex || 0);
+          const end = iv.endPolylinePointIndex ?? start;
+          const span = Math.max(1, end - start);
+          w[iv.speed] = (w[iv.speed] || 0) + span;
+        });
+        const total = w.TRAFFIC_JAM + w.SLOW + w.NORMAL;
+        if (total === 0) return 'green';
+        if (w.TRAFFIC_JAM / total > 0.25) return 'red';     // >25% em congestionamento
+        if ((w.TRAFFIC_JAM + w.SLOW) / total > 0.35) return 'yellow'; // trânsito moderado
+        return 'green';
+      })();
 
       // Publish nav data to backend so admin/public viewers see the same route
       if (routeId && isTechnician) {
@@ -655,14 +713,16 @@ const RouteMapDialog = ({ open, onClose, orders, routeName, token, routeId, user
           nav_path: fullPath,
           nav_distance_meters: distM,
           nav_duration_seconds: durSec,
-          nav_duration_in_traffic_seconds: durSec,
-          nav_traffic_color: 'segmented',
+          nav_duration_in_traffic_seconds: durTrafficSec,
+          nav_traffic_color: aggTrafficColor,
           nav_destination_lat: nextStop.lat,
           nav_destination_lng: nextStop.lng,
         }, token ? { headers: { Authorization: `Bearer ${token}` } } : {}).catch(() => {});
       }
     } catch (e) {
-      console.warn('[NavLine] /nav-leg failed — keeping straight fallback', e?.response?.status);
+      // Mantém a rota anterior desenhada. Só avisa o usuário se não havia nada.
+      if (!hasExistingRoute) setNextInstruction('Erro ao calcular rota - tentando novamente...');
+      console.warn('[NavLine] /nav-leg failed', e?.response?.status);
     }
   }, [routeData, stopStatuses, routeId, isTechnician, token, userName]);
 
@@ -783,6 +843,34 @@ const RouteMapDialog = ({ open, onClose, orders, routeName, token, routeId, user
         const newLng = pos.coords.longitude;
         const gpsHeading = pos.coords.heading;
         const speed = (pos.coords.speed || 0) * 3.6;
+        const accuracy = pos.coords.accuracy; // metros, menor = mais preciso
+        const nowTs = pos.timestamp || Date.now();
+
+        // ─── Filtro 1: GPS impreciso ───
+        // Celulares em prédios ou com GPS frio devolvem fixes de 150-500m de
+        // raio. Usar isso diretamente dá "pulos" visuais no marker e dispara
+        // off-route falsos. Rejeitamos fixes com accuracy > 60m, exceto o
+        // primeiro (precisamos de alguma posição inicial).
+        if (Number.isFinite(accuracy) && accuracy > 60 && prevPosRef.current) {
+          console.debug('[GPS] drop low-accuracy fix', { accuracy });
+          return;
+        }
+
+        // ─── Filtro 2: salto impossível ───
+        // Se a nova posição está a >200m da anterior em <2s, é "GPS jump"
+        // (típico em troca de célula/wifi). Taxa > 180km/h de movimento
+        // instantâneo é descartada.
+        if (prevPosRef.current && lastFixTsRef.current) {
+          const dtSec = Math.max(0.1, (nowTs - lastFixTsRef.current) / 1000);
+          const dMeters = haversine(prevPosRef.current.lat, prevPosRef.current.lng, newLat, newLng);
+          const kmh = (dMeters / dtSec) * 3.6;
+          if (dMeters > 200 && kmh > 180) {
+            console.debug('[GPS] drop impossible jump', { dMeters, kmh });
+            return;
+          }
+        }
+        lastFixTsRef.current = nowTs;
+
         // Heading efetivo: GPS quando o veículo está em movimento (>3km/h),
         // senão mantém o último valor conhecido (que pode ter vindo do
         // magnetômetro via `deviceorientation`). Isso evita "spins" quando

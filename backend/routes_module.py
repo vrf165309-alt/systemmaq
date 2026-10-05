@@ -18,7 +18,9 @@ import jwt
 
 logger = logging.getLogger(__name__)
 
-JWT_SECRET = os.environ.get('JWT_SECRET', 'change-me')
+JWT_SECRET = os.environ.get('JWT_SECRET')
+if not JWT_SECRET or JWT_SECRET in ('default_secret', 'change-me', ''):
+    raise RuntimeError("JWT_SECRET ausente ou inseguro em backend/.env")
 
 # Local copy of token verification to avoid circular imports with server.py.
 async def verify_token(authorization: Optional[str] = Header(None)):

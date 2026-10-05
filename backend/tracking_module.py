@@ -22,7 +22,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tracking", tags=["tracking"])
 
-JWT_SECRET = os.environ.get("JWT_SECRET", "default_secret")
+JWT_SECRET = os.environ.get("JWT_SECRET")
+if not JWT_SECRET or JWT_SECRET in ("default_secret", "change-me", ""):
+    # Falhar na importação — qualquer módulo que use este import vai receber
+    # a exceção durante o startup do backend, antes de servir qualquer
+    # requisição. Pior cenário: backend não sobe (correto).
+    raise RuntimeError("JWT_SECRET ausente ou inseguro em backend/.env")
 JWT_ALGORITHM = "HS256"
 SHARE_TOKEN_TTL_HOURS = 24
 

@@ -335,3 +335,67 @@ Antes: `technician_signature` era OBRIGATÓRIO no `POST /signature-link` — o t
 - `/app/frontend/src/components/LaudoModal.js`
 - `/app/frontend/src/components/OrderDetailOverlay.js`
 
+
+## Sessão 05/10/2026 — Fase 1 do refactor de Tracking/Navegação
+
+### 23. `distanceToPath` com projeção perpendicular ao segmento
+- **Antes**: calculava só distância aos VÉRTICES da polyline → carro a 10m da
+  reta A-B (mas 100m de A e 100m de B) era avaliado como 100m fora da rota.
+  Isso atrasava o off-route detection ou disparava recálculos tardios.
+- **Agora** (`RoutesPage.js`): projeção equiretangular (válida p/ <10km, erro
+  <0.5%) + projeção escalar `t ∈ [0,1]` em cada segmento + clamp aos endpoints
+  quando o ponto está fora do intervalo. Validado numericamente:
+  - Perpendicular 10m real → algoritmo retorna 10.0m (antes: 105.0m)
+  - Além do vértice A → retorna 104.6m (até A, correto)
+  - Sobre a linha → retorna 0.00m
+
+### 24. Filtros de precisão GPS (accuracy + salto impossível)
+- **Filtro 1 — accuracy > 60m**: Celulares em prédios devolvem fixes de
+  150-500m. Antes isso ia direto para câmera/off-route detection. Agora
+  rejeitamos (exceto o primeiro fix, que é necessário para iniciar o
+  tracking).
+- **Filtro 2 — salto impossível**: Se dMeters > 200m entre dois fixes
+  consecutivos E velocidade instantânea > 180 km/h → descarta. Novo
+  `lastFixTsRef` guarda timestamp do último fix aceito.
+
+### 25. ETA e cor de trânsito corretos no backend
+- **Antes**: `nav_duration_seconds` e `nav_duration_in_traffic_seconds`
+  recebiam o MESMO valor → admin perdia a distinção entre tempo planejado e
+  tempo real com trânsito. `nav_traffic_color: 'segmented'` não existia no
+  colorMap do admin → caía no azul padrão silenciosamente.
+- **Agora**:
+  - `nav_duration_seconds` ← `duration_seconds` (planejado).
+  - `nav_duration_in_traffic_seconds` ← `duration_in_traffic_seconds`
+    (com trânsito, fallback para o planejado).
+  - UI mostra o tempo COM trânsito, não o idealizado.
+  - Nova função `aggTrafficColor()` calcula a cor agregada da rota a partir
+    dos `speedReadingIntervals`, retornando `green` / `yellow` / `red`
+    (compatível com o colorMap do admin). >25% em `TRAFFIC_JAM` → red;
+    >35% em `JAM+SLOW` → yellow; resto → green.
+
+### 26. Fallback "Calculando rota..." em vez de linha reta enganosa
+- **Antes**: enquanto a API `/nav-leg` respondia, desenhávamos uma linha
+  reta Técnico→OS. Dava impressão de "atravessa prédios/quarteirões".
+- **Agora**: se já há rota real desenhada, MANTEMOS ela durante o
+  recálculo (sem flicker). Se é primeira chamada, mostramos o texto
+  "Calculando rota..." no painel de próxima instrução. Erro de API → texto
+  "Rota indisponível - verifique conexão", rota antiga continua visível.
+
+### 27. JWT_SECRET fail-fast (segurança)
+- **Antes**: `JWT_SECRET = os.environ.get('JWT_SECRET', 'default_secret')`
+  — se a env var sumisse, o backend subia usando `default_secret`, abrindo
+  caminho para forja de tokens.
+- **Agora** (`server.py`, `tracking_module.py`, `routes_module.py`):
+  importação levanta `RuntimeError` se `JWT_SECRET` não existir OU for
+  um dos valores inseguros (`default_secret`, `change-me`, vazio). Backend
+  não sobe — falha explícita no startup. Validado: remover a env var =
+  `RuntimeError: JWT_SECRET ausente ou inseguro em backend/.env`.
+
+**Arquivos modificados nesta Fase 1**:
+- `/app/frontend/src/pages/RoutesPage.js` — distanceToPath perpendicular,
+  filtros GPS (accuracy + jump), ETA/cor de trânsito corretos, fallback
+  "Calculando rota".
+- `/app/backend/server.py` — JWT_SECRET fail-fast.
+- `/app/backend/tracking_module.py` — JWT_SECRET fail-fast.
+- `/app/backend/routes_module.py` — JWT_SECRET fail-fast.
+

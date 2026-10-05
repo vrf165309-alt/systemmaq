@@ -90,8 +90,13 @@ if not supabase_url or not supabase_key:
 from supabase_db import db
 logger.info("Supabase DB adapter initialized")
 
-# JWT config
-JWT_SECRET = os.environ.get('JWT_SECRET', 'default_secret')
+# JWT config — falha rápido se não houver segredo configurado em prod.
+# Antes usávamos "default_secret" como fallback, o que é um buraco grave:
+# qualquer agente com conhecimento do fallback poderia forjar tokens.
+JWT_SECRET = os.environ.get('JWT_SECRET')
+if not JWT_SECRET or JWT_SECRET in ('default_secret', 'change-me', ''):
+    logger.error("JWT_SECRET ausente ou inseguro — defina uma string forte em backend/.env")
+    sys.exit(1)
 JWT_ALGORITHM = "HS256"
 
 # Telecontrol credentials
