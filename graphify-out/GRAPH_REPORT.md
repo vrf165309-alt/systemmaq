@@ -1,16 +1,16 @@
-# Graph Report - app  (2026-10-02)
+# Graph Report - app  (2026-10-05)
 
 ## Corpus Check
-- 123 files · ~239,743 words
+- 123 files · ~241,029 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1256 nodes · 1990 edges · 139 communities (75 shown, 64 thin omitted)
+- 1262 nodes · 1993 edges · 139 communities (75 shown, 64 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 5 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `8a825f30`
+- Built from commit: `720a9967`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -32,7 +32,7 @@
 - post
 - utils.js
 - BaseModel
-- LaudoModal.js
+- button.jsx
 - components.json
 - cn
 - menubar.jsx
@@ -45,9 +45,9 @@
 - create_external_os
 - users_module.py
 - assinafy_service.py
-- button.jsx
+- label.jsx
 - mark_all_notifications_read
-- LoginPage.js
+- input-otp.jsx
 - command.jsx
 - context-menu.jsx
 - whatsapp_module.py
@@ -71,7 +71,7 @@
 - compilerOptions
 - health-endpoints.js
 - dropdown-menu.jsx
-- alert.jsx
+- avatar.jsx
 - Política de uso do Graphify neste projeto
 - migration_verify.py
 - CacheHeaderMiddleware
@@ -144,7 +144,7 @@
 - HTTPAuthorizationCredentials
 - put
 - OSPublicViewPage.js
-- Jules Nightly Report — 2026-09-15
+- Jules Nightly Report — 2026-10-02
 - get_alerts_summary
 - PublicTrackingPage.js
 - verify_token
@@ -154,16 +154,14 @@
 2. `useAuth()` - 20 edges
 3. `SupabaseCollection` - 19 edges
 4. `Button` - 16 edges
-5. `Label` - 13 edges
-6. `PRD — Mastermaq / Maq-Sync-Hub` - 12 edges
+5. `PRD — Mastermaq / Maq-Sync-Hub` - 13 edges
+6. `Label` - 13 edges
 7. `TelecontrolScraper` - 12 edges
 8. `Input` - 12 edges
 9. `FindCursor` - 11 edges
-10. `_get_client()` - 10 edges
+10. `get_db()` - 10 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `NotificationsPanel()` --calls--> `useAuth()`  [EXTRACTED]
-  frontend/src/components/NotificationsPanel.js → frontend/src/context/AuthContext.js
 - `AlertDialogHeader()` --calls--> `cn()`  [EXTRACTED]
   frontend/src/components/ui/alert-dialog.jsx → frontend/src/lib/utils.js
 - `AlertDialogFooter()` --calls--> `cn()`  [EXTRACTED]
@@ -172,6 +170,8 @@
   frontend/src/components/ui/breadcrumb.jsx → frontend/src/lib/utils.js
 - `BreadcrumbEllipsis()` --calls--> `cn()`  [EXTRACTED]
   frontend/src/components/ui/breadcrumb.jsx → frontend/src/lib/utils.js
+- `CommandShortcut()` --calls--> `cn()`  [EXTRACTED]
+  frontend/src/components/ui/command.jsx → frontend/src/lib/utils.js
 
 ## Import Cycles
 - 3-file cycle: `frontend/src/components/DashboardLayout.js -> frontend/src/components/OrderDetailOverlay.js -> frontend/src/pages/ServiceOrdersPage.js -> frontend/src/components/DashboardLayout.js`
@@ -204,11 +204,11 @@ Nodes (35): BreadcrumbPoint, create_share_token(), current_session(), end_tracki
 
 ### Community 6 - "RoutesPage.js"
 Cohesion: 0.09
-Nodes (25): OrderDetailOverlay(), Checkbox, Slider, supabase, buildMotoSVG(), buildNavArrowSVG(), buildTechIconSVG(), CreateRouteModal() (+17 more)
+Nodes (24): Checkbox, Slider, supabase, buildMotoSVG(), buildNavArrowSVG(), buildTechIconSVG(), CreateRouteModal(), deduplicatePlaces() (+16 more)
 
 ### Community 7 - "ServiceOrdersPage.js"
-Cohesion: 0.14
-Nodes (22): LaudoModal(), PopoverContent, TabsContent, TabsList, TabsTrigger, BRAND_LIST, BrandLogo(), GARANTIA_SUBTYPES (+14 more)
+Cohesion: 0.13
+Nodes (22): PopoverContent, TabsContent, TabsList, TabsTrigger, Textarea, BRAND_LIST, BrandLogo(), GARANTIA_SUBTYPES (+14 more)
 
 ### Community 8 - "InventoryPage.js"
 Cohesion: 0.14
@@ -227,8 +227,8 @@ Cohesion: 0.16
 Nodes (14): force_resync(), Notification, public_signature_submit(), PublicSignSubmit, Sign an OS with technician and/or client signatures. Aceita três cenários: 1.…, Persist client signature via the public link. Reuses the same PDF/ Assinafy…, Run sync for both Hisense and HQ in parallel. Parallel execution ensures the HQ…, Force a catch-up resync for a specific scraper (Hisense or HQ). (+6 more)
 
 ### Community 12 - "App.js"
-Cohesion: 0.10
-Nodes (7): App(), Toaster(), AuthContext, AuthProvider(), failedQueue, root, PublicSignPage()
+Cohesion: 0.09
+Nodes (11): App(), Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle, Toaster() (+3 more)
 
 ### Community 13 - "form.jsx"
 Cohesion: 0.07
@@ -239,16 +239,16 @@ Cohesion: 0.09
 Nodes (25): create_os_share_token(), fire_test_webhook(), generate_laudo_word(), get_photos_status(), increment_print_count(), LaudoData, migrate_fix_aguardando_status(), migrate_statuses() (+17 more)
 
 ### Community 15 - "utils.js"
-Cohesion: 0.09
-Nodes (14): Avatar, AvatarFallback, AvatarImage, HoverCardContent, InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot (+6 more)
+Cohesion: 0.11
+Nodes (11): Alert, AlertDescription, AlertTitle, alertVariants, HoverCardContent, Progress, RadioGroup, RadioGroupItem (+3 more)
 
 ### Community 16 - "BaseModel"
 Cohesion: 0.15
 Nodes (14): create_service_order(), create_token(), login(), LoginRequest, LoginResponse, BaseModel, Upload the PDF generated on the frontend to Meta Media API, then send it as a…, refresh_token() (+6 more)
 
-### Community 17 - "LaudoModal.js"
-Cohesion: 0.16
-Nodes (9): PHOTO_LABELS, IMPORTANT: the OS PUT (step 2) is ADDITIVE — we only send a field if the, RECALL_PHOTO_LABELS, DialogContent, DialogDescription, DialogHeader(), DialogOverlay, DialogTitle (+1 more)
+### Community 17 - "button.jsx"
+Cohesion: 0.17
+Nodes (12): LaudoModal(), PHOTO_LABELS, IMPORTANT: the OS PUT (step 2) is ADDITIVE — we only send a field if the, RECALL_PHOTO_LABELS, Button, DialogContent, DialogDescription, DialogFooter() (+4 more)
 
 ### Community 18 - "components.json"
 Cohesion: 0.11
@@ -294,17 +294,17 @@ Nodes (11): hash_password(), BaseModel, Users module — RBAC (Admin vs Technici
 Cohesion: 0.17
 Nodes (11): create_assignment(), create_signer(), generate_os_pdf(), get_document_status(), Assinafy Digital Signature Service Handles PDF generation and Assinafy API…, Upload a PDF document to Assinafy and return the document data, Create a signer in Assinafy, Create a virtual assignment for the document (+3 more)
 
-### Community 30 - "button.jsx"
-Cohesion: 0.22
-Nodes (15): DashboardLayout(), Badge(), badgeVariants, Button, DialogFooter(), Input, Label, labelVariants (+7 more)
+### Community 30 - "label.jsx"
+Cohesion: 0.27
+Nodes (9): DashboardLayout(), Badge(), badgeVariants, Input, Label, labelVariants, PRESETS, WebhooksAdminPage() (+1 more)
 
 ### Community 31 - "mark_all_notifications_read"
 Cohesion: 0.50
 Nodes (5): delete_service_order(), mark_all_notifications_read(), mark_notification_read(), delete, put
 
-### Community 32 - "LoginPage.js"
-Cohesion: 0.33
-Nodes (6): Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle
+### Community 32 - "input-otp.jsx"
+Cohesion: 0.40
+Nodes (4): InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot
 
 ### Community 33 - "command.jsx"
 Cohesion: 0.20
@@ -391,12 +391,12 @@ Cohesion: 0.47
 Nodes (5): formatBytes(), formatDuration(), os, SERVER_START_TIME, setupHealthEndpoints()
 
 ### Community 55 - "dropdown-menu.jsx"
-Cohesion: 0.25
-Nodes (7): DropdownMenuCheckboxItem, DropdownMenuLabel, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuShortcut(), DropdownMenuSubContent, DropdownMenuSubTrigger
+Cohesion: 0.20
+Nodes (9): DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuShortcut(), DropdownMenuSubContent (+1 more)
 
-### Community 56 - "alert.jsx"
-Cohesion: 0.40
-Nodes (4): Alert, AlertDescription, AlertTitle, alertVariants
+### Community 56 - "avatar.jsx"
+Cohesion: 0.50
+Nodes (3): Avatar, AvatarFallback, AvatarImage
 
 ### Community 57 - "Política de uso do Graphify neste projeto"
 Cohesion: 0.33
@@ -415,8 +415,8 @@ Cohesion: 0.50
 Nodes (3): config, path, webpackConfig
 
 ### Community 62 - "DashboardLayout.js"
-Cohesion: 0.17
-Nodes (8): menuItems, NotificationsPanel(), DropdownMenuContent, DropdownMenuItem, ScrollArea, ScrollBar, promptInstall(), setupInstallPrompt()
+Cohesion: 0.14
+Nodes (11): menuItems, NotificationsPanel(), ScrollArea, ScrollBar, AuthContext, AuthProvider(), failedQueue, useAuth() (+3 more)
 
 ### Community 63 - "Learn More"
 Cohesion: 0.14
@@ -431,8 +431,8 @@ Cohesion: 0.50
 Nodes (3): AccordionContent, AccordionItem, AccordionTrigger
 
 ### Community 90 - "PRD — Mastermaq / Maq-Sync-Hub"
-Cohesion: 0.06
-Nodes (33): 11. Bug: mensagem WhatsApp com URL duplicada (`https://.../https://.../sign/...`), 12. Feature: fluxo "cliente assina primeiro, técnico completa depois", 13. Scraper capturando dados desalinhados (Hisense + HQ) — CRÍTICO, 14. Sugestões de rota enriquecidas por LLM (Emergent LLM Key / OpenAI), 15. Filtros de Roteiro consolidados, 16. Mapa estilo Google Maps 3D, 17. "Compartilhar Localização" liberado a qualquer momento, 18. Roteirização com 4 novos grupos (Região / Próximas / Tempo / Prioridade) (+25 more)
+Cohesion: 0.05
+Nodes (39): 11. Bug: mensagem WhatsApp com URL duplicada (`https://.../https://.../sign/...`), 12. Feature: fluxo "cliente assina primeiro, técnico completa depois", 13. Scraper capturando dados desalinhados (Hisense + HQ) — CRÍTICO, 14. Sugestões de rota enriquecidas por LLM (Emergent LLM Key / OpenAI), 15. Filtros de Roteiro consolidados, 16. Mapa estilo Google Maps 3D, 17. "Compartilhar Localização" liberado a qualquer momento, 18. Roteirização com 4 novos grupos (Região / Próximas / Tempo / Prioridade) (+31 more)
 
 ### Community 106 - "alert-dialog.jsx"
 Cohesion: 0.22
@@ -442,9 +442,9 @@ Nodes (8): AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialog
 Cohesion: 0.25
 Nodes (7): Ações recomendadas (para E1/usuário aplicar — NÃO aplicadas por mim), Causa-raiz (diagnosticada, não reproduzida), Evidências coletadas, Hipóteses do reporte × veredito, Observações, RCA — HTTP 520 em POST /api/auth/login (produção mastermaq-system.online), TL;DR
 
-### Community 135 - "Jules Nightly Report — 2026-09-15"
+### Community 135 - "Jules Nightly Report — 2026-10-02"
 Cohesion: 0.25
-Nodes (7): Feature Completion Breakdown, Jules Nightly Report — 2026-09-15, Next Milestone Target, Project Status: [0% Complete], Publishing Status, Test Results, What Was Shipped Yesterday
+Nodes (7): Feature Completion Breakdown, Jules Nightly Report — 2026-10-02, Next Milestone Target, Project Status: [0% Complete], Publishing Status, Test Results, What Was Shipped Yesterday
 
 ### Community 136 - "get_alerts_summary"
 Cohesion: 0.40
@@ -455,7 +455,7 @@ Cohesion: 0.67
 Nodes (3): GOOGLE_MAPS_LIBRARIES, haversine(), PublicTrackingPage()
 
 ## Knowledge Gaps
-- **343 isolated node(s):** `PHOTO_LABELS`, `RECALL_PHOTO_LABELS`, `GOOGLE_MAPS_LIBRARIES`, `ROUTE_STATUSES`, `EXCLUDED_STATUSES` (+338 more)
+- **348 isolated node(s):** `Project Status: [0% Complete]`, `What Was Shipped Yesterday`, `Feature Completion Breakdown`, `Publishing Status`, `Test Results` (+343 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **64 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -463,13 +463,13 @@ Nodes (3): GOOGLE_MAPS_LIBRARIES, haversine(), PublicTrackingPage()
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `dependencies` connect `dependencies` to `devDependencies`, `form.jsx`, `date-fns`, `axios`, `class-variance-authority`, `clsx`, `cmdk`, `embla-carousel-react`, `@hookform/resolvers`, `html2pdf.js`, `input-otp`, `mammoth`, `@radix-ui/react-accordion`, `@radix-ui/react-alert-dialog`, `@radix-ui/react-aspect-ratio`, `@radix-ui/react-avatar`, `@radix-ui/react-checkbox`, `@radix-ui/react-collapsible`, `@radix-ui/react-context-menu`, `@radix-ui/react-dialog`, `@radix-ui/react-dropdown-menu`, `@radix-ui/react-hover-card`, `@radix-ui/react-label`, `@radix-ui/react-menubar`, `@radix-ui/react-progress`, `@radix-ui/react-radio-group`, `@radix-ui/react-select`, `qrcode`, `fabric`, `@radix-ui/react-slot`, `@radix-ui/react-popover`, `lucide-react`, `@radix-ui/react-toggle-group`, `@radix-ui/react-tooltip`, `@radix-ui/react-tabs`, `@react-google-maps/api`, `@radix-ui/react-toast`, `@radix-ui/react-slider`, `react-scripts`, `recharts`, `@supabase/supabase-js`, `tailwind-merge`, `tailwindcss-animate`, `vaul`, `zod`, `react-day-picker`, `sonner`, `next-themes`, `@radix-ui/react-toggle`, `react-hook-form`, `react-router-dom`?**
-  _High betweenness centrality (0.110) - this node is a cross-community bridge._
+  _High betweenness centrality (0.098) - this node is a cross-community bridge._
 - **Why does `react` connect `form.jsx` to `dependencies`?**
-  _High betweenness centrality (0.093) - this node is a cross-community bridge._
-- **Why does `cn()` connect `cn` to `RoutesPage.js`, `ServiceOrdersPage.js`, `form.jsx`, `utils.js`, `LaudoModal.js`, `menubar.jsx`, `button.jsx`, `LoginPage.js`, `command.jsx`, `context-menu.jsx`, `table.jsx`, `breadcrumb.jsx`, `drawer.jsx`, `ManuaisPage.js`, `navigation-menu.jsx`, `sheet.jsx`, `toggle-group.jsx`, `dropdown-menu.jsx`, `alert.jsx`, `DashboardLayout.js`, `accordion.jsx`, `alert-dialog.jsx`?**
-  _High betweenness centrality (0.056) - this node is a cross-community bridge._
-- **What connects `PHOTO_LABELS`, `RECALL_PHOTO_LABELS`, `GOOGLE_MAPS_LIBRARIES` to the rest of the system?**
-  _343 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _High betweenness centrality (0.087) - this node is a cross-community bridge._
+- **Why does `cn()` connect `cn` to `RoutesPage.js`, `ServiceOrdersPage.js`, `App.js`, `form.jsx`, `utils.js`, `button.jsx`, `menubar.jsx`, `label.jsx`, `input-otp.jsx`, `command.jsx`, `context-menu.jsx`, `table.jsx`, `breadcrumb.jsx`, `drawer.jsx`, `ManuaisPage.js`, `navigation-menu.jsx`, `sheet.jsx`, `toggle-group.jsx`, `dropdown-menu.jsx`, `avatar.jsx`, `DashboardLayout.js`, `accordion.jsx`, `alert-dialog.jsx`?**
+  _High betweenness centrality (0.054) - this node is a cross-community bridge._
+- **What connects `Project Status: [0% Complete]`, `What Was Shipped Yesterday`, `Feature Completion Breakdown` to the rest of the system?**
+  _348 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `server.py` be split into smaller, more focused modules?**
   _Cohesion score 0.04426559356136821 - nodes in this community are weakly interconnected._
 - **Should `devDependencies` be split into smaller, more focused modules?**
