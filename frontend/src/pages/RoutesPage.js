@@ -340,6 +340,21 @@ const RouteMapDialog = ({ open, onClose, orders, routeName, token, routeId, user
   // Timestamp (ms) do último fix de GPS aceito. Usado para detectar saltos
   // impossíveis entre leituras consecutivas (dMeters/dt > ~180km/h).
   const lastFixTsRef = useRef(0);
+  // Camera de navegação com estado próprio — ANTES jogávamos panTo/setHeading/setTilt
+  // direto no mapa a cada fix GPS (saltitante). Agora o GPS escreve o TARGET aqui,
+  // um rAF loop interpola suave do current → target a cada frame (~16ms).
+  // Isso elimina a sensação de "teleporte" quando chega um fix e dá o smoothing
+  // que o Google Maps tem nativamente.
+  const cameraStateRef = useRef({
+    current: { lat: 0, lng: 0, heading: 0, tilt: 45, zoom: 15 },
+    target:  { lat: 0, lng: 0, heading: 0, tilt: 45, zoom: 15 },
+    rafId: null,
+    active: false,
+  });
+  // Timer do polling de trânsito/ETA (a cada 20s durante navegação). Permite
+  // atualizar as cores de congestionamento e o tempo com trânsito SEM mudar
+  // a geometria da rota (atualização BARATA — distinta do recálculo completo).
+  const trafficPollRef = useRef(null);
 
   // Keep refs in sync with state
   useEffect(() => { followModeRef.current = followMode; }, [followMode]);
@@ -3660,7 +3675,7 @@ const ViewRouteModal = ({ open, onClose, route, token, onUpdated, technicianName
                         const phone = (o.phone1 || '').replace(/\D/g, '');
                         const phoneNum = phone.startsWith('55') ? phone : `55${phone}`;
                         const addr = `${o.address || ''} ${o.number || ''}, ${o.neighborhood || ''} - ${o.city || ''}`.trim();
-                        const msg = `Olá, *Mastermaq Assistência Técnica Serviço Autorizado*, informa que o técnico *${route.technician || ''}* chegará ao destino ${arrivalPrefix} *${etaText}*.\n\nOS ${o.os_number} - ${o.customer_name || ''}\n${addr}\n${o.phone1 || ''}`;
+                        const msg = `Olá, *Mastermaq Assistência Técnica Serviço Autorizado*, informa que o técnico *${route.technician || ''}* chegará ao destino ${arrivalPrefix} *${etaText}*.\n\nOS ${o.os_number} - ${o.customer_name || ''}\n${addr}\n${o.phone1 || ''} *Caso o seu produto se enquadre em uma das seguintes categorias — ar-condicionado, geladeira, frigobar, cervejeira, freezer ou máquina de gelo —, favor mantê-lo ligado até a chegada do técnico.*`;
                         window.open(`https://wa.me/${phoneNum}?text=${encodeURIComponent(msg)}`, '_blank');
                       }}
                     >
@@ -3700,7 +3715,7 @@ const ViewRouteModal = ({ open, onClose, route, token, onUpdated, technicianName
                           ? `https://www.google.com/maps?q=${o.lat},${o.lng}`
                           : '';
                         const mapsLine = mapsLink ? `\nLocalização: ${mapsLink}\n` : '';
-                        const msg = `Olá,\n\nA Mastermaq Assistência Técnica (Serviço Autorizado) informa que teremos disponibilidade técnica para o seu atendimento dia ${dateStr}.\n\nPedimos, por gentileza, que verifique se as informações abaixo estão corretas:\n\nOS ${o.os_number} - ${o.customer_name || ''}\n\n${addr}${mapsLine}\n${o.phone1 || ''}\n\nPodemos confirmar o agendamento para essa data?\n\nRessaltamos também que trabalhamos dentro do horário comercial (9h às 18h) e não realizamos agendamento com horário marcado. Você receberá uma mensagem automática entre 30 e 60 minutos antes da chegada do técnico.\n\nAguardamos sua confirmação`;
+                        const msg = `Olá,\n\nA Mastermaq Assistência Técnica (Serviço Autorizado) informa que teremos disponibilidade técnica para o seu atendimento dia ${dateStr}.\n\nPedimos, por gentileza, que verifique se as informações abaixo estão corretas:\n\nOS ${o.os_number} - ${o.customer_name || ''}\n\n${addr}${mapsLine}\n${o.phone1 || ''}\n\nPodemos confirmar o agendamento para essa data?\n\nRessaltamos também que trabalhamos dentro do horário comercial (9h às 18h) e não realizamos agendamento com horário marcado. Você receberá uma mensagem automática entre 10 a 60 minutos antes da chegada do técnico. Caso o seu produto se enquadre em uma das seguintes categorias — ar-condicionado, geladeira, frigobar, cervejeira, freezer ou máquina de gelo —, favor mantê-lo ligado até a chegada do técnico. \n\nAguardamos sua confirmação`;
                         window.open(`https://wa.me/${phoneWa}?text=${encodeURIComponent(msg)}`, '_blank');
                       }}
                     >
