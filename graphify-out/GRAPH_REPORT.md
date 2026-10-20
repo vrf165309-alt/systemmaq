@@ -1,7 +1,7 @@
-# Graph Report - app  (2026-10-05)
+# Graph Report - app  (2026-10-20)
 
 ## Corpus Check
-- 123 files · ~241,029 words
+- 123 files · ~241,229 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `720a9967`
+- Built from commit: `3ee9dc04`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -455,7 +455,7 @@ Cohesion: 0.67
 Nodes (3): GOOGLE_MAPS_LIBRARIES, haversine(), PublicTrackingPage()
 
 ## Knowledge Gaps
-- **348 isolated node(s):** `Project Status: [0% Complete]`, `What Was Shipped Yesterday`, `Feature Completion Breakdown`, `Publishing Status`, `Test Results` (+343 more)
+- **348 isolated node(s):** `GOOGLE_MAPS_LIBRARIES`, `ROUTE_STATUSES`, `EXCLUDED_STATUSES`, `RouteOSInputs`, `Project Status: [0% Complete]` (+343 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **64 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -463,12 +463,12 @@ Nodes (3): GOOGLE_MAPS_LIBRARIES, haversine(), PublicTrackingPage()
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `dependencies` connect `dependencies` to `devDependencies`, `form.jsx`, `date-fns`, `axios`, `class-variance-authority`, `clsx`, `cmdk`, `embla-carousel-react`, `@hookform/resolvers`, `html2pdf.js`, `input-otp`, `mammoth`, `@radix-ui/react-accordion`, `@radix-ui/react-alert-dialog`, `@radix-ui/react-aspect-ratio`, `@radix-ui/react-avatar`, `@radix-ui/react-checkbox`, `@radix-ui/react-collapsible`, `@radix-ui/react-context-menu`, `@radix-ui/react-dialog`, `@radix-ui/react-dropdown-menu`, `@radix-ui/react-hover-card`, `@radix-ui/react-label`, `@radix-ui/react-menubar`, `@radix-ui/react-progress`, `@radix-ui/react-radio-group`, `@radix-ui/react-select`, `qrcode`, `fabric`, `@radix-ui/react-slot`, `@radix-ui/react-popover`, `lucide-react`, `@radix-ui/react-toggle-group`, `@radix-ui/react-tooltip`, `@radix-ui/react-tabs`, `@react-google-maps/api`, `@radix-ui/react-toast`, `@radix-ui/react-slider`, `react-scripts`, `recharts`, `@supabase/supabase-js`, `tailwind-merge`, `tailwindcss-animate`, `vaul`, `zod`, `react-day-picker`, `sonner`, `next-themes`, `@radix-ui/react-toggle`, `react-hook-form`, `react-router-dom`?**
-  _High betweenness centrality (0.098) - this node is a cross-community bridge._
+  _High betweenness centrality (0.096) - this node is a cross-community bridge._
 - **Why does `react` connect `form.jsx` to `dependencies`?**
-  _High betweenness centrality (0.087) - this node is a cross-community bridge._
+  _High betweenness centrality (0.086) - this node is a cross-community bridge._
 - **Why does `cn()` connect `cn` to `RoutesPage.js`, `ServiceOrdersPage.js`, `App.js`, `form.jsx`, `utils.js`, `button.jsx`, `menubar.jsx`, `label.jsx`, `input-otp.jsx`, `command.jsx`, `context-menu.jsx`, `table.jsx`, `breadcrumb.jsx`, `drawer.jsx`, `ManuaisPage.js`, `navigation-menu.jsx`, `sheet.jsx`, `toggle-group.jsx`, `dropdown-menu.jsx`, `avatar.jsx`, `DashboardLayout.js`, `accordion.jsx`, `alert-dialog.jsx`?**
-  _High betweenness centrality (0.054) - this node is a cross-community bridge._
-- **What connects `Project Status: [0% Complete]`, `What Was Shipped Yesterday`, `Feature Completion Breakdown` to the rest of the system?**
+  _High betweenness centrality (0.053) - this node is a cross-community bridge._
+- **What connects `GOOGLE_MAPS_LIBRARIES`, `ROUTE_STATUSES`, `EXCLUDED_STATUSES` to the rest of the system?**
   _348 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `server.py` be split into smaller, more focused modules?**
   _Cohesion score 0.04426559356136821 - nodes in this community are weakly interconnected._
